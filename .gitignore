@@ -1,4 +1,6 @@
 build/
+WineForge/
 toolchain/gptk-extract/
 toolchain/gnutls-headers/debian-dev/
+toolchain/gnutls-headers/gnutls-3.8.13/
 *.dmp
