@@ -9,6 +9,8 @@ P="${WINEPREFIX:-/Users/tim/Library/Containers/com.franke.Whisky/Bottles/66589F3
 STEAM_DIR="$P/drive_c/Program Files (x86)/Steam"
 STEAM="$STEAM_DIR/steam.exe"
 PC2_GAME="$STEAM_DIR/steamapps/common/Planet Coaster 2/PlanetCoaster2.exe"
+EXP33_DIR="$STEAM_DIR/steamapps/common/Expedition 33"
+EXP33_LAUNCHER="$EXP33_DIR/Expedition33_Steam.exe"
 EXP33_GAME="$STEAM_DIR/steamapps/common/Expedition 33/Sandfall/Binaries/Win64/SandFall-Win64-Shipping.exe"
 GPTK="${GPTK_WINE:-$ROOT/toolchain/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine}"
 STEAM_LOG='/private/tmp/planetcoaster2-controller-steam.log'
@@ -56,6 +58,7 @@ else
   GAME_LOG="$EXP33_LOG"
   GAME_PIDFILE="$EXP33_PIDFILE"
   GAME_EXE='SandFall-Win64-Shipping.exe'
+  GAME_LAUNCHER="$EXP33_LAUNCHER"
 fi
 
 run_wine() {
@@ -98,7 +101,7 @@ find_pids() {
   ps -axo pid=,args= 2>/dev/null | while read -r pid args; do
     [[ -z "$pid" || "$pid" == $$ ]] && continue
     if [[ "$scope" == game ]]; then
-      [[ "$args" == *"$GAME_EXE"* && "$args" == *"$P"* ]] && print "$pid"
+      [[ ( "$args" == *"$GAME_EXE"* || ( "$GAME_TARGET" == 33 && "$args" == *'Expedition33_Steam.exe'* ) ) && "$args" == *"$P"* ]] && print "$pid"
     elif [[ "$scope" == steam ]]; then
       [[ "$args" == *"$P"* && "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
     else
@@ -177,7 +180,12 @@ start_game() {
   cd "$STEAM_DIR"
   print "Requesting $GAME_LABEL from the existing Steam client..."
   print "AppID: $APPID"
-  ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
+  if [[ "$GAME_TARGET" == 33 ]]; then
+    print 'Launching the Expedition 33 Steam bootstrapper directly with Steam API environment...'
+    ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME_LAUNCHER" -dx12 -windowed -ResX=1280 -ResY=720 >>"$GAME_LOG" 2>&1 ) &
+  else
+    ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
+  fi
   print $! > "$GAME_PIDFILE"
   print "$GAME_LABEL started. Log: $GAME_LOG"
 }
