@@ -8,33 +8,54 @@ WINE_SERVER="${WINE_SERVER:-$R/bin/wineserver}"
 P="${WINEPREFIX:-/Users/tim/Library/Containers/com.franke.Whisky/Bottles/66589F31-3F31-4D59-AC97-90EE21022A1D}"
 STEAM_DIR="$P/drive_c/Program Files (x86)/Steam"
 STEAM="$STEAM_DIR/steam.exe"
-GAME="$STEAM_DIR/steamapps/common/Planet Coaster 2/PlanetCoaster2.exe"
-APPID='2688950'
+PC2_GAME="$STEAM_DIR/steamapps/common/Planet Coaster 2/PlanetCoaster2.exe"
+EXP33_GAME="$STEAM_DIR/steamapps/common/Expedition 33/Sandfall/Binaries/Win64/SandFall-Win64-Shipping.exe"
 GPTK="${GPTK_WINE:-$ROOT/toolchain/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine}"
 STEAM_LOG='/private/tmp/planetcoaster2-controller-steam.log'
-GAME_LOG='/private/tmp/planetcoaster2-controller-game.log'
+PC2_LOG='/private/tmp/planetcoaster2-controller-pc2.log'
+EXP33_LOG='/private/tmp/planetcoaster2-controller-33.log'
 STEAM_PIDFILE='/private/tmp/planetcoaster2-controller-steam.pid'
-GAME_PIDFILE='/private/tmp/planetcoaster2-controller-game.pid'
+PC2_PIDFILE='/private/tmp/planetcoaster2-controller-pc2.pid'
+EXP33_PIDFILE='/private/tmp/planetcoaster2-controller-33.pid'
 
 usage() {
-  print 'Usage: control-wineforge-planetcoaster2.zsh <start|stop> <steam|game|all>'
+  print 'Usage: control-wineforge-planetcoaster2.zsh <start|stop> <steam|game|all> [pc2|33]'
   print ''
   print 'Commands:'
   print '  start steam   Start Steam only'
-  print '  start game    Start Planet Coaster 2 only; Steam must already be running'
+  print '  start game pc2  Start Planet Coaster 2; Steam must already be running'
+  print '  start game 33   Start Expedition 33; Steam must already be running'
   print '  stop steam    Stop Steam and its Wine-side helper processes'
-  print '  stop game     Stop Planet Coaster 2 only'
+  print '  stop game pc2   Stop Planet Coaster 2 only'
+  print '  stop game 33    Stop Expedition 33 only'
   print '  start all     Start Steam, wait for login, then start the game'
   print '  stop all      Stop the game, Steam, and their Wine-side helpers'
   exit 2
 }
 
-if [[ $# -ne 2 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) ]]; then
+if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 ) || ( "$2" != game && $# -eq 3 ) ]]; then
   usage
 fi
-if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" || ! -f "$GAME" ]]; then
-  print -u2 'WineForge, Steam, or Planet Coaster 2 is missing from the expected paths.'
+if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" || ! -f "$PC2_GAME" || ! -f "$EXP33_GAME" ]]; then
+  print -u2 'WineForge, Steam, Planet Coaster 2, or Expedition 33 is missing from the expected paths.'
   exit 1
+fi
+
+GAME_TARGET="${3:-pc2}"
+if [[ "$GAME_TARGET" == pc2 ]]; then
+  GAME="$PC2_GAME"
+  APPID='2688950'
+  GAME_LABEL='Planet Coaster 2'
+  GAME_LOG="$PC2_LOG"
+  GAME_PIDFILE="$PC2_PIDFILE"
+  GAME_EXE='PlanetCoaster2.exe'
+else
+  GAME="$EXP33_GAME"
+  APPID='1903340'
+  GAME_LABEL='Expedition 33'
+  GAME_LOG="$EXP33_LOG"
+  GAME_PIDFILE="$EXP33_PIDFILE"
+  GAME_EXE='SandFall-Win64-Shipping.exe'
 fi
 
 run_wine() {
@@ -77,7 +98,7 @@ find_pids() {
   ps -axo pid=,args= 2>/dev/null | while read -r pid args; do
     [[ -z "$pid" || "$pid" == $$ ]] && continue
     if [[ "$scope" == game ]]; then
-      [[ "$args" == *'PlanetCoaster2.exe'* && "$args" == *"$P"* ]] && print "$pid"
+      [[ "$args" == *"$GAME_EXE"* && "$args" == *"$P"* ]] && print "$pid"
     elif [[ "$scope" == steam ]]; then
       [[ "$args" == *"$P"* && "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
     else
@@ -143,20 +164,20 @@ wait_for_steam() {
 
 start_game() {
   if [[ "${FORCE_GAME:-0}" != 1 ]] && (( ${#$(find_pids game)} )); then
-    print 'Planet Coaster 2 is already running for this bottle.'
+    print "$GAME_LABEL is already running for this bottle."
     return 0
   fi
   if (( ! ${#$(find_pids steam)} )); then
-    print -u2 'Steam is not running for this bottle. Use start steam or start all first.'
+    print -u2 'Steam is not running for this bottle. Use start steam first.'
     return 1
   fi
   : > "$GAME_LOG"
   cd "$STEAM_DIR"
-  print 'Requesting Planet Coaster 2 from the existing Steam client...'
+  print "Requesting $GAME_LABEL from the existing Steam client..."
   print "AppID: $APPID"
   ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
   print $! > "$GAME_PIDFILE"
-  print "Planet Coaster 2 started. Log: $GAME_LOG"
+  print "$GAME_LABEL started. Log: $GAME_LOG"
 }
 
 case "$1 $2" in

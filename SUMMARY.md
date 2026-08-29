@@ -1,4 +1,4 @@
-# GPTK 4 + WineForge Steam / Planet Coaster 2 checkpoint
+# GPTK 4 + WineForge Steam / Windows games checkpoint
 
 This directory records the working configuration reached on 2026-08-29 for
 Planet Coaster 2 (Steam AppID `2688950`) on Apple Silicon macOS 26.6.2.
@@ -64,9 +64,12 @@ checkpoint rebuild script should be preferred for future recovery.
 
 ## Runtime scripts
 
-- `scripts/control-planetcoaster2.zsh`: start/stop Steam and the game. It
-  supports `start steam`, `start game`, `stop steam`, `stop game`, `start all`,
-  and `stop all`. Set `WINE_RUNTIME`, `WINE_EXEC`, `WINE_SERVER`,
+- `scripts/control-planetcoaster2.zsh`: start/stop Steam and either installed
+  game. Use `start game pc2` for Planet Coaster 2 (AppID `2688950`) or
+  `start game 33` for Clair Obscur: Expedition 33 (AppID `1903340`). Matching
+  `stop game pc2` and `stop game 33` commands are also supported; the older
+  `start game`/`stop game` forms continue to mean Planet Coaster 2. The script
+  also supports `start steam`, `start all`, and `stop all`. Set `WINE_RUNTIME`, `WINE_EXEC`, `WINE_SERVER`,
   `GPTK_WINE`, or `WINEPREFIX` to override paths.
 - `scripts/kill-wine-steam-experiment.zsh`: emergency cleanup for Wine,
   Steam, helpers, `conhost`, and Planet Coaster 2 processes.
