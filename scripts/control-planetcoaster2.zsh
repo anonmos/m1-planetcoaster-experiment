@@ -147,12 +147,10 @@ start_steam() {
 
 wait_for_steam() {
   local log="$STEAM_DIR/logs/connection_log.txt"
-  local start_lines=0
-  [[ -f "$log" ]] && start_lines=$(wc -l < "$log")
   print 'Waiting up to 180 seconds for Steam to report Logged On...'
   integer attempt
   for attempt in {1..90}; do
-    if [[ -f "$log" ]] && tail -n +$((start_lines + 1)) "$log" 2>/dev/null | grep -q '\[Logged On,'; then
+    if [[ -f "$log" ]] && tail -n 200 "$log" 2>/dev/null | grep -E '\[(Logged On|Logged Off),' | tail -n 1 | grep -q '\[Logged On,'; then
       print 'Steam is logged on.'
       return 0
     fi
@@ -169,6 +167,10 @@ start_game() {
   fi
   if (( ! ${#$(find_pids steam)} )); then
     print -u2 'Steam is not running for this bottle. Use start steam first.'
+    return 1
+  fi
+  if ! wait_for_steam; then
+    print -u2 "$GAME_LABEL was not started because Steam is not logged on."
     return 1
   fi
   : > "$GAME_LOG"
