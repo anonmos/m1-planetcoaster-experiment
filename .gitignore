@@ -1,0 +1,4 @@
+build/
+toolchain/gptk-extract/
+toolchain/gnutls-headers/debian-dev/
+*.dmp

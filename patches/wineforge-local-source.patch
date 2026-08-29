@@ -1,0 +1,146 @@
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index 77e6084..87da00a 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1496,7 +1496,11 @@ static void send_server_task_port(void)
+     }
+     kret = bootstrap_look_up(bootstrap_port, server_dir, &wineserver_port);
+     if (kret != KERN_SUCCESS)
+-        fatal_error( "cannot find the server port: 0x%08x\n", kret );
++    {
++        /* Mach tracing is optional; recent macOS versions may reject the
++         * server registration while the Unix server socket remains usable. */
++        return;
++    }
+ 
+     mach_port_deallocate(mach_task_self(), bootstrap_port);
+ 
+diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
+index 832043a..d4f891d 100644
+--- a/dlls/win32u/freetype.c
++++ b/dlls/win32u/freetype.c
+@@ -1235,7 +1235,8 @@ static void fontconfig_add_font( FcPattern *pattern, UINT flags )
+ 
+ static void init_fontconfig(void)
+ {
+-    void *fc_handle = dlopen(SONAME_LIBFONTCONFIG, RTLD_NOW);
++    const char *path = getenv( "WINE_FONTCONFIG_PATH" );
++    void *fc_handle = dlopen( path && *path ? path : SONAME_LIBFONTCONFIG, RTLD_NOW );
+ 
+     if (!fc_handle)
+     {
+@@ -1454,7 +1455,8 @@ static void load_mac_fonts(void)
+ 
+ static BOOL init_freetype(void)
+ {
+-    ft_handle = dlopen(SONAME_LIBFREETYPE, RTLD_NOW);
++    const char *path = getenv( "WINE_FREETYPE_PATH" );
++    ft_handle = dlopen( path && *path ? path : SONAME_LIBFREETYPE, RTLD_NOW );
+     if(!ft_handle) {
+         WINE_MESSAGE(
+       "Wine cannot find the FreeType font library.  To enable Wine to\n"
+diff --git a/dlls/win32u/sysparams.c b/dlls/win32u/sysparams.c
+index fa22d62..1a5609d 100644
+--- a/dlls/win32u/sysparams.c
++++ b/dlls/win32u/sysparams.c
+@@ -2830,7 +2830,12 @@ static UINT update_display_devices( struct device_manager_ctx *ctx )
+     }
+ 
+     if (status == STATUS_NOT_IMPLEMENTED) return default_update_display_devices( ctx );
+-    return status;
++
++    /* Some macOS releases can fail display enumeration transiently or return
++     * an unusable configuration.  Do not spin forever in lock_display_devices
++     * in that case: expose Wine's safe virtual display instead. */
++    WARN( "display provider failed with status %#x, using the default virtual display\n", status );
++    return default_update_display_devices( ctx );
+ }
+ 
+ static void commit_display_devices( struct device_manager_ctx *ctx )
+@@ -2889,8 +2894,27 @@ static BOOL lock_display_devices( BOOL force )
+ 
+     pthread_mutex_lock( &display_lock );
+ 
++    /* macOS Tahoe can leave the native display provider unusable.  For
++     * headless/compatibility experiments, provide Wine's deterministic
++     * virtual monitor and skip the provider/cache path entirely. */
++    if (getenv( "WINE_FORCE_VIRTUAL_DISPLAY" ))
++    {
++        /* Keep the in-process virtual display stable.  Rebuilding the global
++         * source/monitor lists on every query races with Steam's helper
++         * threads and can leave add_modes() without a source. */
++        if (list_empty( &monitors ))
++        {
++            default_update_display_devices( &ctx );
++            commit_display_devices( &ctx );
++        }
++        release_display_manager_ctx( &ctx );
++        pthread_mutex_unlock( &display_lock );
++        return !list_empty( &monitors );
++    }
++
+     serial = get_monitor_update_serial();
+-    if (!force && monitor_update_serial >= serial) return TRUE;
++    /* A zero serial with an empty cache is not a valid initialized state. */
++    if (!force && monitor_update_serial >= serial && !list_empty( &monitors )) return TRUE;
+ 
+     /* services do not have any adapters, only a virtual monitor */
+     if (NtUserGetObjectInformation( NtUserGetProcessWindowStation(), UOI_NAME, name, sizeof(name), NULL )
+@@ -2909,6 +2933,17 @@ static BOOL lock_display_devices( BOOL force )
+         if (!get_opengl_gpus( &ctx.opengl_gpus )) WARN( "Failed to find any OpenGL GPU\n" );
+         if (!(status = update_display_devices( &ctx ))) commit_display_devices( &ctx );
+         else WARN( "Failed to update display devices, status %#x\n", status );
++
++        /* If the macOS display provider returned no usable monitor, rebuild
++         * the cache with Wine's deterministic single virtual display.  This
++         * is needed by applications that enumerate monitors before creating
++         * their first window. */
++        if (list_empty( &monitors ))
++        {
++            clear_display_devices();
++            default_update_display_devices( &ctx );
++            commit_display_devices( &ctx );
++        }
+         release_display_manager_ctx( &ctx );
+ 
+         ret = update_display_cache_from_registry( serial );
+@@ -2917,6 +2952,9 @@ static BOOL lock_display_devices( BOOL force )
+     if (!ret)
+     {
+         ERR( "Failed to read display config.\n" );
++        /* The in-memory fallback above is still valid even when the registry
++         * could not be refreshed on this macOS release. */
++        ret = !list_empty( &monitors );
+         pthread_mutex_unlock( &display_lock );
+     }
+     return ret;
+diff --git a/server/mach.c b/server/mach.c
+index ec73dc6..d6f5a37 100644
+--- a/server/mach.c
++++ b/server/mach.c
+@@ -109,7 +109,13 @@ void init_tracing_mechanism(void)
+                                  MACH_MSG_TYPE_MAKE_SEND ) != KERN_SUCCESS)
+             fatal_error( "Error inserting rights\n" );
+     if (bootstrap_register2( bp, server_dir, server_mach_port, 0 ) != KERN_SUCCESS)
+-        fatal_error( "Can't check in server_mach_port\n" );
++    {
++        /* Recent macOS versions can reject the optional tracing port.  The
++         * Unix server socket remains usable without Mach tracing. */
++        fprintf( stderr, "warning: can't check in server_mach_port; disabling Mach tracing\n" );
++        mach_port_destroy( mach_task_self(), server_mach_port );
++        server_mach_port = MACH_PORT_NULL;
++    }
+     mach_port_deallocate( mach_task_self(), bp );
+ }
+ 
+@@ -123,7 +129,9 @@ void init_process_tracing( struct process *process )
+         mach_msg_body_t             body;
+         mach_msg_port_descriptor_t  task_port;
+         mach_msg_trailer_t          trailer; /* only present on receive */
+-    } msg;
++        } msg;
++
++    if (server_mach_port == MACH_PORT_NULL) return;
+ 
+     for (;;)
+     {
