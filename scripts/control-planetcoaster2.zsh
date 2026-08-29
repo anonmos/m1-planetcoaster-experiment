@@ -182,7 +182,7 @@ start_game() {
   print "AppID: $APPID"
   if [[ "$GAME_TARGET" == 33 ]]; then
     print 'Launching the Expedition 33 Steam bootstrapper directly with Steam API environment...'
-    ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME_LAUNCHER" -dx12 -windowed -ResX=1280 -ResY=720 >>"$GAME_LOG" 2>&1 ) &
+    ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME_LAUNCHER" -dx12 -nographicsdrivercheck -windowed -ResX=1280 -ResY=720 >>"$GAME_LOG" 2>&1 ) &
   else
     ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
   fi
