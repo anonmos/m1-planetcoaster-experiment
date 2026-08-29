@@ -88,6 +88,11 @@ checkpoint rebuild script should be preferred for future recovery.
 6. Use the cleanup script before starting a new experiment, then run the
    controller's `start steam` and `start game` commands.
 
-The Steam/Planet Coaster paths are currently tied to Whisky bottle
-`66589F31-3F31-4D59-AC97-90EE21022A1D`; update `WINEPREFIX` when restoring on
-a new installation.
+The working Steam and Planet Coaster 2 installation used for this checkpoint
+resides in Whisky bottle `66589F31-3F31-4D59-AC97-90EE21022A1D`. This is a path
+reference, not a claim that the installations were inherited from the earlier
+setup: Steam and Planet Coaster 2 were reinstalled/initialized in this bottle
+as part of the WineForge experiment. The checkpoint does not contain the Steam
+or game files. When restoring on another installation, create or use the new
+bottle, install Steam and Planet Coaster 2 there, and set `WINEPREFIX` to that
+bottle's path.
