@@ -64,6 +64,10 @@ elif [[ "$GAME_TARGET" == er ]]; then
   GAME_LOG="$ER_LOG"
   GAME_PIDFILE="$ER_PIDFILE"
   GAME_EXE='eldenring.exe'
+  # Elden Ring resolves its Data*.bhd archives relative to the working
+  # directory: launching from $STEAM_DIR makes it look in
+  # "C:\Program Files (x86)\Steam\Data0.bhd" and die in CSEblFileManager.
+  GAME_DIR="$ER_DIR"
 else
   GAME="$EXP33_GAME"
   APPID='1903340'
@@ -214,7 +218,7 @@ start_game() {
     return 1
   fi
   : > "$GAME_LOG"
-  cd "$STEAM_DIR"
+  cd "${GAME_DIR:-$STEAM_DIR}"
   print "Requesting $GAME_LABEL from the existing Steam client..."
   print "AppID: $APPID"
   if [[ "$GAME_TARGET" == 33 ]]; then
