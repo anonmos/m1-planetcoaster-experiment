@@ -199,6 +199,29 @@ checkpoint rebuild script should be preferred for future recovery.
   loaded without its unix side (check the `libd3dshared` links and confirm
   `external/wine/x86_64-unix/*.so` with `DYLD_PRINT_LIBRARIES=1`).
 
+## Bottle (prefix) backup and recreation
+
+The working bottle `66589F31-3F31-4D59-AC97-90EE21022A1D` is a Whisky-managed
+win64 prefix (reported Windows build 22000) with Steam, VC++ 2022 runtimes,
+Wine Mono, and the installed games (total ~133G, of which ~129G is
+re-downloadable game payloads). Winetricks has installed nothing in it; the
+only hand-placed file known is `windows/system32/atiadlxx.dll` (present
+since August, origin unclear — leave it alone). The bottle directory itself
+is NOT in git.
+
+- `scripts/backup-bottle.zsh [dest]` stops the stack and archives the bottle
+  minus `steamapps/common`, `downloading`, `shadercache`, and `dumps`
+  (typically 3-5G) to `~/Backups/gptk-steam-emulation/`.
+- `scripts/restore-bottle.zsh <file>` extracts it back under Whisky's
+  `Bottles/` dir (same UUID; Whisky picks it up, no import needed), then
+  games reinstall via Steam against the preserved manifests.
+- Prefix-local tweaks that must be re-applied if the backup is also lost
+  (all documented under Elden Ring above): `ELDEN RING/Game/
+  steam_appid.txt` and borderless `GraphicsConfig.xml`.
+- True from-scratch fallback (no backup): Whisky → new win64 bottle, install
+  Steam client, log in, install the games, re-apply the tweaks. The runtime
+  (`build/`) is rebuilt independently via `scripts/build-wineforge-full.zsh`.
+
 ## Recovery outline
 
 1. Accept the Xcode license (`sudo xcodebuild -license`) and install Rosetta
