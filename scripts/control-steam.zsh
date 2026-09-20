@@ -25,7 +25,7 @@ EXP33_PIDFILE='/private/tmp/planetcoaster2-controller-33.pid'
 ER_PIDFILE='/private/tmp/planetcoaster2-controller-er.pid'
 
 usage() {
-  print 'Usage: control-wineforge-planetcoaster2.zsh <start|stop> <steam|game|all> [pc2|33|er]'
+  print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er]'
   print ''
   print 'Commands:'
   print '  start steam   Start Steam only'

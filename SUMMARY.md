@@ -133,7 +133,7 @@ checkpoint rebuild script should be preferred for future recovery.
 
 ## Runtime scripts
 
-- `scripts/control-planetcoaster2.zsh`: start/stop Steam and either installed
+- `scripts/control-steam.zsh`: start/stop Steam and either installed
   game. Use `start game pc2` for Planet Coaster 2 (AppID `2688950`),
   `start game 33` for Clair Obscur: Expedition 33 (AppID `1903340`), or
   `start game er` for Elden Ring (AppID `1245620`, offline EAC bypass — see
@@ -161,7 +161,7 @@ checkpoint rebuild script should be preferred for future recovery.
   `ranlib` races), D3DMetal + freetype/fontconfig closure sync, and the
   `secur32` repair. This is the script to run after any macOS/Xcode update
   or `build/` loss.
-- `scripts/control-planetcoaster2.zsh`: also fixed 2026-09-20 — `find_pids`
+- `scripts/control-steam.zsh`: also fixed 2026-09-20 — `find_pids`
   now matches Wine-spawned children by their `C:\...` argv paths (they carry
   no trace of the macOS bottle path, so `stop` previously missed all
   helpers/service), and `stop all` ends with a catch-all sweep
@@ -206,7 +206,7 @@ checkpoint rebuild script should be preferred for future recovery.
 4. Run `scripts/build-wineforge-full.zsh` (full rebuild; prefer over
    `build-wineforge-tls.zsh`, which is repair-only).
 5. Run `tools/run-tls-probe-wineforge.zsh`; require `HTTPS status: 200`.
-6. Set the bottle path in `scripts/control-planetcoaster2.zsh` if the Whisky
+6. Set the bottle path in `scripts/control-steam.zsh` if the Whisky
    bottle UUID changed.
 7. Use the cleanup script before starting a new experiment, then run the
    controller's `start steam` and `start game` commands. Steam must be
