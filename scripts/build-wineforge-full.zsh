@@ -116,6 +116,23 @@ fi
 mkdir -p "$RUNTIME/lib/external" "$RUNTIME/lib/wine/x86_64-unix"
 cp -R "$GPTK/lib/external/D3DMetal.framework" "$RUNTIME/lib/external/"
 cp -f "$GPTK/lib/external/libd3dshared.dylib" "$RUNTIME/lib/external/"
+# D3DMetal PE/unixlib redirect tree: WineForge's ntdll loader resolves
+# dxgi/d3d*/nvapi modules from $D3DMETAL_RUNTIME_DIR/wine/ (see
+# dlls/ntdll/unix/d3dmetal_loader.c). Without these, games fall back to
+# Wine's builtin d3d12 -> vkd3d -> E_FAIL (no Vulkan in this build).
+mkdir -p "$RUNTIME/lib/external/wine/x86_64-windows" \
+  "$RUNTIME/lib/external/wine/x86_64-unix" \
+  "$RUNTIME/lib/external/wine/i386-windows"
+for m in dxgi d3d10 d3d10core d3d11 d3d12 nvapi64 nvngx nvngx-on-metalfx; do
+  [[ -f "$GPTK/lib/wine/x86_64-windows/$m.dll" ]] && cp -a "$GPTK/lib/wine/x86_64-windows/$m.dll" "$RUNTIME/lib/external/wine/x86_64-windows/"
+  [[ -f "$GPTK/lib/wine/i386-windows/$m.dll" ]] && cp -a "$GPTK/lib/wine/i386-windows/$m.dll" "$RUNTIME/lib/external/wine/i386-windows/"
+  # NOTE: GPTK's x86_64-unix/*.so are symlinks to ../../external/libd3dshared.dylib,
+  # which resolves correctly only under GPTK's lib/ layout. Recreate them here
+  # pointing at our own libd3dshared or they dangle (all D3D goes through it).
+  if [[ -e "$GPTK/lib/wine/x86_64-unix/$m.so" ]]; then
+    ln -sfn ../../libd3dshared.dylib "$RUNTIME/lib/external/wine/x86_64-unix/$m.so"
+  fi
+done
 cp -a "$GPTK/lib/libfreetype.6.dylib" "$RUNTIME/lib/"
 cp -a "$GST/lib/libfontconfig.1.dylib" "$RUNTIME/lib/"
 cp -a "$GST/lib/libexpat.1.dylib" "$GST/lib/libexpat.1.10.2.dylib" "$RUNTIME/lib/"

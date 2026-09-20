@@ -109,6 +109,15 @@ plus `libfontconfig.1`, exact-name `libexpat.1.10.2` (x86_64, from GPTK's
 GStreamer bundle), and `libintl.8`. Note `/opt/homebrew` fontconfig is
 arm64-only and unusable here; only its headers are used at build time.
 
+`R/lib/external/wine/` must contain GPTK's D3DMetal `dxgi`/`d3d10`/
+`d3d10core`/`d3d11`/`d3d12`/`nvapi64`/`nvngx` PE DLLs and unixlibs
+(`x86_64-windows`, `x86_64-unix`, `i386-windows`). WineForge's ntdll loader
+redirects those module names there (`dlls/ntdll/unix/d3dmetal_loader.c`); if
+the tree is missing, games silently fall back to Wine's builtin d3d12, whose
+vkd3d path fails without Vulkan (`D3D12CreateDevice` → `E_FAIL`, game
+crashes dereferencing the null device). This was the Elden Ring startup
+crash of 2026-09-20.
+
 The failed intermediate modules are preserved in the original working
 runtime as `secur32.gptk-native.so` and `secur32.wineforge-rebuilt.so`; the
 checkpoint rebuild script should be preferred for future recovery.
