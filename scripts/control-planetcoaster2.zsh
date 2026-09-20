@@ -74,6 +74,22 @@ else
   GAME_LAUNCHER="$EXP33_LAUNCHER"
 fi
 
+# GPU identity presented to games through D3DMetal. Elden Ring ships AMD AGS
+# (amd_ags_x64.dll) and crashes during startup GPU detection with the NVIDIA
+# spoof, so it gets the AMD identity from the WineForge README; everything
+# else keeps the NVIDIA identity. All four remain overridable via env.
+if [[ "$GAME_TARGET" == er ]]; then
+  : ${D3DM_UPSCALER_PROFILE:=amd}
+  : ${D3DM_VENDOR_ID:=4098}
+  : ${D3DM_DEVICE_ID:=29631}
+  : ${D3DM_DEVICE_DESCRIPTION:='AMD Radeon RX 6800 XT'}
+else
+  : ${D3DM_UPSCALER_PROFILE:=nvidia}
+  : ${D3DM_VENDOR_ID:=4318}
+  : ${D3DM_DEVICE_ID:=10370}
+  : ${D3DM_DEVICE_DESCRIPTION:='NVIDIA GeForce RTX 4080'}
+fi
+
 run_wine() {
   local steam_app_id="${STEAM_APP_ID:-$APPID}"
   local steam_client_launch="${STEAM_CLIENT_LAUNCH:-1}"
@@ -94,10 +110,10 @@ run_wine() {
     D3DM_ENABLE_METALFX=1 \
     D3DM_ERROR_MODE=1 \
     GRAPHICS_BACKEND=d3dmetal \
-    D3DMETAL_UPSCALER_PROFILE=nvidia \
-    D3DM_VENDOR_ID=4318 \
-    D3DM_DEVICE_ID=10370 \
-    D3DM_DEVICE_DESCRIPTION='NVIDIA GeForce RTX 4080' \
+    D3DMETAL_UPSCALER_PROFILE="$D3DM_UPSCALER_PROFILE" \
+    D3DM_VENDOR_ID="$D3DM_VENDOR_ID" \
+    D3DM_DEVICE_ID="$D3DM_DEVICE_ID" \
+    D3DM_DEVICE_DESCRIPTION="$D3DM_DEVICE_DESCRIPTION" \
     WINEESYNC=0 WINEMSYNC=0 WINEFSYNC=0 \
     LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
     STEAM_RUNTIME=0 \
