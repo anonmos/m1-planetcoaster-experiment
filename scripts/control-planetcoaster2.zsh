@@ -12,34 +12,40 @@ PC2_GAME="$STEAM_DIR/steamapps/common/Planet Coaster 2/PlanetCoaster2.exe"
 EXP33_DIR="$STEAM_DIR/steamapps/common/Expedition 33"
 EXP33_LAUNCHER="$EXP33_DIR/Expedition33_Steam.exe"
 EXP33_GAME="$STEAM_DIR/steamapps/common/Expedition 33/Sandfall/Binaries/Win64/SandFall-Win64-Shipping.exe"
+ER_DIR="$STEAM_DIR/steamapps/common/ELDEN RING/Game"
+ER_GAME="$ER_DIR/eldenring.exe"
 GPTK="${GPTK_WINE:-$ROOT/toolchain/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine}"
 STEAM_LOG='/private/tmp/planetcoaster2-controller-steam.log'
 PC2_LOG='/private/tmp/planetcoaster2-controller-pc2.log'
 EXP33_LOG='/private/tmp/planetcoaster2-controller-33.log'
+ER_LOG='/private/tmp/planetcoaster2-controller-er.log'
 STEAM_PIDFILE='/private/tmp/planetcoaster2-controller-steam.pid'
 PC2_PIDFILE='/private/tmp/planetcoaster2-controller-pc2.pid'
 EXP33_PIDFILE='/private/tmp/planetcoaster2-controller-33.pid'
+ER_PIDFILE='/private/tmp/planetcoaster2-controller-er.pid'
 
 usage() {
-  print 'Usage: control-wineforge-planetcoaster2.zsh <start|stop> <steam|game|all> [pc2|33]'
+  print 'Usage: control-wineforge-planetcoaster2.zsh <start|stop> <steam|game|all> [pc2|33|er]'
   print ''
   print 'Commands:'
   print '  start steam   Start Steam only'
   print '  start game pc2  Start Planet Coaster 2; Steam must already be running'
   print '  start game 33   Start Expedition 33; Steam must already be running'
+  print '  start game er   Start Elden Ring (offline EAC bypass); Steam must already be running'
   print '  stop steam    Stop Steam and its Wine-side helper processes'
   print '  stop game pc2   Stop Planet Coaster 2 only'
   print '  stop game 33    Stop Expedition 33 only'
+  print '  stop game er    Stop Elden Ring only'
   print '  start all     Start Steam, wait for login, then start the game'
   print '  stop all      Stop the game, Steam, and their Wine-side helpers'
   exit 2
 }
 
-if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 ) || ( "$2" != game && $# -eq 3 ) ]]; then
+if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er ) || ( "$2" != game && $# -eq 3 ) ]]; then
   usage
 fi
-if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" || ! -f "$PC2_GAME" || ! -f "$EXP33_GAME" ]]; then
-  print -u2 'WineForge, Steam, Planet Coaster 2, or Expedition 33 is missing from the expected paths.'
+if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" || ! -f "$PC2_GAME" || ! -f "$EXP33_GAME" || ! -f "$ER_GAME" ]]; then
+  print -u2 'WineForge, Steam, Planet Coaster 2, Expedition 33, or Elden Ring is missing from the expected paths.'
   exit 1
 fi
 
@@ -51,6 +57,13 @@ if [[ "$GAME_TARGET" == pc2 ]]; then
   GAME_LOG="$PC2_LOG"
   GAME_PIDFILE="$PC2_PIDFILE"
   GAME_EXE='PlanetCoaster2.exe'
+elif [[ "$GAME_TARGET" == er ]]; then
+  GAME="$ER_GAME"
+  APPID='1245620'
+  GAME_LABEL='Elden Ring'
+  GAME_LOG="$ER_LOG"
+  GAME_PIDFILE="$ER_PIDFILE"
+  GAME_EXE='eldenring.exe'
 else
   GAME="$EXP33_GAME"
   APPID='1903340'
@@ -113,7 +126,7 @@ find_pids() {
     elif [[ "$scope" == steam ]]; then
       [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
     else
-      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'conhost.exe'|'winedevice.exe'|'services.exe'|'plugplay.exe'|'svchost.exe'|'explorer.exe'|'rpcss.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
+      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'eldenring.exe'|'start_protected_game.exe'|'conhost.exe'|'winedevice.exe'|'services.exe'|'plugplay.exe'|'svchost.exe'|'explorer.exe'|'rpcss.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
     fi
   done
 }
@@ -191,6 +204,10 @@ start_game() {
   if [[ "$GAME_TARGET" == 33 ]]; then
     print 'Launching the Expedition 33 Steam bootstrapper directly with Steam API environment...'
     ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME_LAUNCHER" -dx12 -nographicsdrivercheck -windowed -ResX=1280 -ResY=720 >>"$GAME_LOG" 2>&1 ) &
+  elif [[ "$GAME_TARGET" == er ]]; then
+    print 'Launching eldenring.exe directly (EAC bypass, offline only) with Steam API environment...'
+    print 'EasyAntiCheat via start_protected_game.exe does not load under Wine; online play is unavailable.'
+    ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME" >>"$GAME_LOG" 2>&1 ) &
   else
     ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
   fi
