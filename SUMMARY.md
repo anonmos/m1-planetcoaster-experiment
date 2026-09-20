@@ -118,6 +118,15 @@ vkd3d path fails without Vulkan (`D3D12CreateDevice` → `E_FAIL`, game
 crashes dereferencing the null device). This was the Elden Ring startup
 crash of 2026-09-20.
 
+Pitfall: GPTK's `x86_64-unix/*.so` files are symlinks to
+`../../external/libd3dshared.dylib`, which resolves only under GPTK's own
+`lib/` layout. A verbatim `cp -a` into `R/lib/external/wine/` leaves them
+dangling (they would need `lib/external/external/`). Recreate them as
+`../../libd3dshared.dylib` instead, and verify with `file` (must not report
+`broken symbolic link`). With dangling links the D3DMetal PE loads without
+its unix side and games die in a null function call (`rip=0`) before any
+D3D12 traffic.
+
 The failed intermediate modules are preserved in the original working
 runtime as `secur32.gptk-native.so` and `secur32.wineforge-rebuilt.so`; the
 checkpoint rebuild script should be preferred for future recovery.
@@ -125,11 +134,15 @@ checkpoint rebuild script should be preferred for future recovery.
 ## Runtime scripts
 
 - `scripts/control-planetcoaster2.zsh`: start/stop Steam and either installed
-  game. Use `start game pc2` for Planet Coaster 2 (AppID `2688950`) or
-  `start game 33` for Clair Obscur: Expedition 33 (AppID `1903340`). Matching
-  `stop game pc2` and `stop game 33` commands are also supported; the older
+  game. Use `start game pc2` for Planet Coaster 2 (AppID `2688950`),
+  `start game 33` for Clair Obscur: Expedition 33 (AppID `1903340`), or
+  `start game er` for Elden Ring (AppID `1245620`, offline EAC bypass — see
+  below). Matching `stop game` variants are supported; the older
   `start game`/`stop game` forms continue to mean Planet Coaster 2. The script
-  also supports `start steam`, `start all`, and `stop all`. Set `WINE_RUNTIME`, `WINE_EXEC`, `WINE_SERVER`,
+  also supports `start steam`, `start all`, and `stop all`. The D3DMetal GPU
+  identity is per-game (NVIDIA spoof by default, AMD `RX 6800 XT` for `er`
+  because it ships AMD AGS); all four identity vars remain env-overridable.
+  Set `WINE_RUNTIME`, `WINE_EXEC`, `WINE_SERVER`,
   `GPTK_WINE`, or `WINEPREFIX` to override paths.
 - `scripts/kill-wine-steam-experiment.zsh`: emergency cleanup for Wine,
   Steam, helpers, `conhost`, and Planet Coaster 2 processes. Points at the
@@ -156,6 +169,26 @@ checkpoint rebuild script should be preferred for future recovery.
   `wineserver -k` cannot kill orphans of an already-dead server.
 - `tools/run-tls-probe-wineforge.zsh`: isolated HTTPS verification.
 - `tools/run-tls-probe-native-gptk.zsh`: comparison test for GPTK native Wine.
+
+## Elden Ring (AppID `1245620`, added 2026-09-20)
+
+- EasyAntiCheat cannot load under Wine (`start_protected_game.exe` is a dead
+  end; online play unavailable). `start game er` launches `ELDEN RING/Game/
+  eldenring.exe` directly with the Steam API env (Steam must be running for
+  the license check); the game runs offline-only. A `steam_appid.txt`
+  containing `1245620` also lives in the `Game/` dir as a fallback AppID
+  source.
+- Do not assume a `SteamAppId`-shaped env difference is the crash cause: in
+  the Sep 2026 debugging it only *looked* guilty because it lets the game
+  progress past the DRM check into the (then broken) graphics path, while
+  without it the game quits silently before any D3D traffic.
+- ER-specific env: AMD GPU identity (it ships `amd_ags_x64.dll`, loaded
+  native). Expect `fixme:atiadlxx` stubs in the log; they are benign so far.
+- Debugging notes that generalize: `D3D12CreateDevice → E_FAIL` + a null
+  device deref means the D3DMetal redirect tree is missing/broken (see
+  above); a `rip=0` fault before any D3D12 traffic means the D3DMetal PE
+  loaded without its unix side (check the `libd3dshared` links and confirm
+  `external/wine/x86_64-unix/*.so` with `DYLD_PRINT_LIBRARIES=1`).
 
 ## Recovery outline
 
