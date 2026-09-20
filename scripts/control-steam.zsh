@@ -15,14 +15,16 @@ EXP33_GAME="$STEAM_DIR/steamapps/common/Expedition 33/Sandfall/Binaries/Win64/Sa
 ER_DIR="$STEAM_DIR/steamapps/common/ELDEN RING/Game"
 ER_GAME="$ER_DIR/eldenring.exe"
 GPTK="${GPTK_WINE:-$ROOT/toolchain/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine}"
-STEAM_LOG='/private/tmp/planetcoaster2-controller-steam.log'
-PC2_LOG='/private/tmp/planetcoaster2-controller-pc2.log'
-EXP33_LOG='/private/tmp/planetcoaster2-controller-33.log'
-ER_LOG='/private/tmp/planetcoaster2-controller-er.log'
-STEAM_PIDFILE='/private/tmp/planetcoaster2-controller-steam.pid'
-PC2_PIDFILE='/private/tmp/planetcoaster2-controller-pc2.pid'
-EXP33_PIDFILE='/private/tmp/planetcoaster2-controller-33.pid'
-ER_PIDFILE='/private/tmp/planetcoaster2-controller-er.pid'
+# Per-prefix log/pid names so two bottles never share /private/tmp files.
+PFX_TAG="${P:t}"
+STEAM_LOG="/private/tmp/planetcoaster2-controller-steam-$PFX_TAG.log"
+PC2_LOG="/private/tmp/planetcoaster2-controller-pc2-$PFX_TAG.log"
+EXP33_LOG="/private/tmp/planetcoaster2-controller-33-$PFX_TAG.log"
+ER_LOG="/private/tmp/planetcoaster2-controller-er-$PFX_TAG.log"
+STEAM_PIDFILE="/private/tmp/planetcoaster2-controller-steam-$PFX_TAG.pid"
+PC2_PIDFILE="/private/tmp/planetcoaster2-controller-pc2-$PFX_TAG.pid"
+EXP33_PIDFILE="/private/tmp/planetcoaster2-controller-33-$PFX_TAG.pid"
+ER_PIDFILE="/private/tmp/planetcoaster2-controller-er-$PFX_TAG.pid"
 
 usage() {
   print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er]'
@@ -44,8 +46,8 @@ usage() {
 if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er ) || ( "$2" != game && $# -eq 3 ) ]]; then
   usage
 fi
-if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" || ! -f "$PC2_GAME" || ! -f "$EXP33_GAME" || ! -f "$ER_GAME" ]]; then
-  print -u2 'WineForge, Steam, Planet Coaster 2, Expedition 33, or Elden Ring is missing from the expected paths.'
+if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" ]]; then
+  print -u2 'WineForge runtime or Steam is missing from the expected paths.'
   exit 1
 fi
 
@@ -202,6 +204,10 @@ wait_for_steam() {
 }
 
 start_game() {
+  if [[ ! -f "$GAME" ]]; then
+    print -u2 "$GAME_LABEL is not installed in this prefix (missing $GAME)."
+    return 1
+  fi
   if [[ "${FORCE_GAME:-0}" != 1 ]] && (( ${#$(find_pids game)} )); then
     print "$GAME_LABEL is already running for this bottle."
     return 0

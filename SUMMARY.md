@@ -218,9 +218,15 @@ is NOT in git.
 - Prefix-local tweaks that must be re-applied if the backup is also lost
   (all documented under Elden Ring above): `ELDEN RING/Game/
   steam_appid.txt` and borderless `GraphicsConfig.xml`.
-- True from-scratch fallback (no backup): Whisky → new win64 bottle, install
-  Steam client, log in, install the games, re-apply the tweaks. The runtime
-  (`build/`) is rebuilt independently via `scripts/build-wineforge-full.zsh`.
+- True from-scratch fallback (no backup): `scripts/create-bottle-fresh.zsh`
+  wineboots a new win64 prefix with the built runtime, downloads SteamSetup,
+  and silent-installs Steam — verified 2026-09-20 into a throwaway prefix
+  (client booted to the login window, no login performed, prefix removed
+  afterwards). Then log in via Steam UI, install the games, and re-apply
+  the prefix-local tweaks. Note the controller's `start steam` intentionally
+  requires only runtime + `steam.exe` (game files are checked per-game in
+  `start game`), and its `/private/tmp` logs/pids are suffixed per bottle
+  so two prefixes never share them.
 
 ## Recovery outline
 
