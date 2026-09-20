@@ -170,20 +170,29 @@ checkpoint rebuild script should be preferred for future recovery.
 - `tools/run-tls-probe-wineforge.zsh`: isolated HTTPS verification.
 - `tools/run-tls-probe-native-gptk.zsh`: comparison test for GPTK native Wine.
 
-## Elden Ring (AppID `1245620`, added 2026-09-20)
+## Elden Ring (AppID `1245620`, added 2026-09-20, booting as of 2026-09-20)
 
 - EasyAntiCheat cannot load under Wine (`start_protected_game.exe` is a dead
   end; online play unavailable). `start game er` launches `ELDEN RING/Game/
   eldenring.exe` directly with the Steam API env (Steam must be running for
   the license check); the game runs offline-only. A `steam_appid.txt`
-  containing `1245620` also lives in the `Game/` dir as a fallback AppID
-  source.
+  containing `1245620` also lives in the `Game/` dir (prefix-local, not in
+  git) as a fallback AppID source.
+- `GAME_DIR` matters: ER resolves `Data*.bhd` relative to the working
+  directory, so the controller launches it from `ELDEN RING/Game/` (other
+  games still launch from `Steam/`).
+- First-run fullscreen must be changed to borderless: exclusive mode changes
+  fail under winemac (`NtUserChangeDisplaySettings → -2`) and the game exits
+  right after the offline popup. Edited prefix-locally in
+  `drive_c/users/tim/AppData/Roaming/EldenRing/GraphicsConfig.xml`
+  (UTF-16LE, no BOM): `<ScreenMode>BORDERLESS WINDOW</ScreenMode>`.
+- GPU identity: NVIDIA spoof for all targets (validated path). The AMD
+  identity was tried for ER's AGS library but changed nothing observable;
+  `fixme:atiadlxx` stubs in the log are benign.
 - Do not assume a `SteamAppId`-shaped env difference is the crash cause: in
   the Sep 2026 debugging it only *looked* guilty because it lets the game
   progress past the DRM check into the (then broken) graphics path, while
   without it the game quits silently before any D3D traffic.
-- ER-specific env: AMD GPU identity (it ships `amd_ags_x64.dll`, loaded
-  native). Expect `fixme:atiadlxx` stubs in the log; they are benign so far.
 - Debugging notes that generalize: `D3D12CreateDevice → E_FAIL` + a null
   device deref means the D3DMetal redirect tree is missing/broken (see
   above); a `rip=0` fault before any D3D12 traffic means the D3DMetal PE

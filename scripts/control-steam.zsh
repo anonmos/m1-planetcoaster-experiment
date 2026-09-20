@@ -78,21 +78,18 @@ else
   GAME_LAUNCHER="$EXP33_LAUNCHER"
 fi
 
-# GPU identity presented to games through D3DMetal. Elden Ring ships AMD AGS
-# (amd_ags_x64.dll) and crashes during startup GPU detection with the NVIDIA
-# spoof, so it gets the AMD identity from the WineForge README; everything
-# else keeps the NVIDIA identity. All four remain overridable via env.
-if [[ "$GAME_TARGET" == er ]]; then
-  : ${D3DM_UPSCALER_PROFILE:=amd}
-  : ${D3DM_VENDOR_ID:=4098}
-  : ${D3DM_DEVICE_ID:=29631}
-  : ${D3DM_DEVICE_DESCRIPTION:='AMD Radeon RX 6800 XT'}
-else
-  : ${D3DM_UPSCALER_PROFILE:=nvidia}
-  : ${D3DM_VENDOR_ID:=4318}
-  : ${D3DM_DEVICE_ID:=10370}
-  : ${D3DM_DEVICE_DESCRIPTION:='NVIDIA GeForce RTX 4080'}
-fi
+# GPU identity presented to games through D3DMetal. NVIDIA spoof for all
+# targets: it is the configuration the working games were validated with,
+# and Elden Ring boots furthest with it (the AMD identity was tried for its
+# AGS library but changed nothing; the real blockers were the missing
+# D3DMetal redirect tree and the working directory). All four remain
+# env-overridable per launch, e.g.:
+#   D3DM_UPSCALER_PROFILE=amd D3DM_VENDOR_ID=4098 D3DM_DEVICE_ID=29631 \
+#   D3DM_DEVICE_DESCRIPTION='AMD Radeon RX 6800 XT' zsh scripts/control-steam.zsh start game er
+: ${D3DM_UPSCALER_PROFILE:=nvidia}
+: ${D3DM_VENDOR_ID:=4318}
+: ${D3DM_DEVICE_ID:=10370}
+: ${D3DM_DEVICE_DESCRIPTION:='NVIDIA GeForce RTX 4080'}
 
 run_wine() {
   local steam_app_id="${STEAM_APP_ID:-$APPID}"
