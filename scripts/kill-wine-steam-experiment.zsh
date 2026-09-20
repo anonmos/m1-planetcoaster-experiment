@@ -6,9 +6,9 @@ print 'Processes found before cleanup:'
 ps -axo pid=,ppid=,comm=,args= 2>/dev/null | grep -Ei "$PATTERN" | grep -v '[g]rep' || print 'None found.'
 
 print '\nSending TERM...'
-WINEFORGE_RUNTIME='/Users/tim/Documents/Codex/2026-08-28/i-m/work/wineforge-runtime'
+WINEFORGE_RUNTIME='/Users/tim/Workspace/gptk-steam-emulation/build/wineforge-runtime'
 WINEFORGE_PREFIX='/Users/tim/Library/Containers/com.franke.Whisky/Bottles/66589F31-3F31-4D59-AC97-90EE21022A1D'
-GPTK_RUNTIME='/Users/tim/Documents/Codex/2026-08-28/i-m/work/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine'
+GPTK_RUNTIME='/Users/tim/Workspace/gptk-steam-emulation/build/gptk-wine'
 WHISKY_RUNTIME='/Users/tim/Library/Application Support/com.franke.Whisky/Libraries/Wine'
 WHISKY_PREFIX='/Users/tim/Library/Containers/com.franke.Whisky/Bottles/66589F31-3F31-4D59-AC97-90EE21022A1D'
 if [[ -x "$WINEFORGE_RUNTIME/bin/wineserver" ]]; then

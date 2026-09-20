@@ -22,6 +22,10 @@ if [[ ! -f "$BUILD/Makefile" ]]; then
     --without-wayland --without-x --with-freetype
 fi
 sed -i.bak 's@^#define SONAME_LIBGNUTLS .*@#define SONAME_LIBGNUTLS "libgnutls.30.dylib"@' "$BUILD/include/config.h"
+# 2026-09-20: same otool-capture failure hits freetype when GPTK paths are in
+# LDFLAGS (configure records a whole otool line as the SONAME), which breaks
+# dwrite text rendering. Repair it the same way.
+sed -i.bak 's@^#define SONAME_LIBFREETYPE .*@#define SONAME_LIBFREETYPE "libfreetype.6.dylib"@' "$BUILD/include/config.h"
 make -C "$BUILD" -j"$(sysctl -n hw.ncpu)" dlls/secur32/secur32.so
 mkdir -p "$RUNTIME/lib/wine/x86_64-unix"
 install -m 755 "$BUILD/dlls/secur32/secur32.so" "$RUNTIME/lib/wine/x86_64-unix/secur32.so"

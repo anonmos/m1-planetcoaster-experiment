@@ -100,12 +100,20 @@ find_pids() {
   local scope="$1"
   ps -axo pid=,args= 2>/dev/null | while read -r pid args; do
     [[ -z "$pid" || "$pid" == $$ ]] && continue
+    # Wine-translated children (spawned via CreateProcess) show C:\ argv paths
+    # with no trace of the macOS bottle path, so match those too. The C:\
+    # markers are Wine-only and never match native macOS processes.
+    local ours=0
+    if [[ "$args" == *"$P"* || "$args" == *'C:\Program Files (x86)\'* || "$args" == *'C:\windows\system32\'* ]]; then
+      ours=1
+    fi
+    (( ours )) || continue
     if [[ "$scope" == game ]]; then
-      [[ ( "$args" == *"$GAME_EXE"* || ( "$GAME_TARGET" == 33 && "$args" == *'Expedition33_Steam.exe'* ) ) && "$args" == *"$P"* ]] && print "$pid"
+      [[ "$args" == *"$GAME_EXE"* || ( "$GAME_TARGET" == 33 && "$args" == *'Expedition33_Steam.exe'* ) ]] && print "$pid"
     elif [[ "$scope" == steam ]]; then
-      [[ "$args" == *"$P"* && "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
+      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
     else
-      [[ "$args" == *"$P"* && "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'conhost.exe'|'winedevice.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
+      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'conhost.exe'|'winedevice.exe'|'services.exe'|'plugplay.exe'|'svchost.exe'|'explorer.exe'|'rpcss.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
     fi
   done
 }
@@ -196,5 +204,5 @@ case "$1 $2" in
   'stop steam') stop_scope steam ;;
   'stop game') stop_scope game ;;
   'start all') start_steam && wait_for_steam && start_game ;;
-  'stop all') stop_scope game; stop_scope steam; stop_prefix_server; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
+  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
 esac
