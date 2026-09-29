@@ -50,6 +50,16 @@ int main(void) {
     printf("loopback Initialize: 0x%08lx\n", hr);
     if (FAILED(hr)) { CoTaskMemFree(mix); return 1; }
 
+    {
+        UINT32 bufsize = 0;
+        REFERENCE_TIME def = 0, minp = 0;
+        if (SUCCEEDED(IAudioClient_GetBufferSize(client, &bufsize)))
+            printf("buffer size: %lu frames (%.1f ms)\n", (unsigned long)bufsize,
+                   bufsize * 1000.0 / mix->nSamplesPerSec);
+        if (SUCCEEDED(IAudioClient_GetDevicePeriod(client, &def, &minp)))
+            printf("device period: def %lld min %lld (100ns)\n", def, minp);
+    }
+
     hr = IAudioClient_GetService(client, &IID_IAudioCaptureClient, (void **)&cap);
     if (FAILED(hr)) { printf("GetService capture: 0x%08lx\n", hr); return 14; }
     hr = IAudioClient_Start(client);
