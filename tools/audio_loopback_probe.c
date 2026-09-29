@@ -58,6 +58,8 @@ int main(void) {
     {
         UINT64 total = 0, nonsilent = 0, packets = 0, i;
         float peak = 0.0f;
+        UINT64 lastpos = 0;
+        int pprinted = 0;
         DWORD t0 = GetTickCount();
         while (GetTickCount() - t0 < 3000) {
             UINT32 n = 0;
@@ -69,6 +71,13 @@ int main(void) {
             if (!n) { Sleep(20); continue; }
             if (FAILED(IAudioCaptureClient_GetBuffer(cap, &buf, &frames, &flags, &pos, &pcpos))) break;
             packets++;
+            if (pprinted < 40) {
+                long long d = packets == 1 ? 0 : (long long)pos - (long long)lastpos;
+                printf("pkt %llu frames %lu devpos %llu delta %+lld flags %lu\n",
+                       packets, (unsigned long)frames, pos, d, (unsigned long)flags);
+                pprinted++;
+            }
+            lastpos = pos;
             {
                 float *s = (float *)buf;
                 UINT64 count = (UINT64)frames * mix->nChannels;

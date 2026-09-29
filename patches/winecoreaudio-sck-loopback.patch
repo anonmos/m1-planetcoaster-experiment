@@ -1,5 +1,5 @@
 diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
-index 0ec10fe..8997fff 100644
+index 0ec10fe..f03a915 100644
 --- a/dlls/winecoreaudio.drv/coreaudio.c
 +++ b/dlls/winecoreaudio.drv/coreaudio.c
 @@ -36,6 +36,7 @@
@@ -10,7 +10,7 @@ index 0ec10fe..8997fff 100644
  #include <sys/types.h>
  #include <sys/stat.h>
  #include <sys/ioctl.h>
-@@ -101,6 +102,12 @@ struct coreaudio_stream
+@@ -101,6 +102,14 @@ struct coreaudio_stream
      INT32 getbuf_last;
      WAVEFORMATEX *fmt;
      BYTE *local_buffer, *cap_buffer, *wrap_buffer, *resamp_buffer, *tmp_buffer;
@@ -18,12 +18,14 @@ index 0ec10fe..8997fff 100644
 +    UINT64 loopback_seq;
 +    UINT64 loopback_consumed;
 +    UINT64 loopback_last_ns;
++    UINT64 loopback_first;
++    UINT32 loopback_frames;
 +    BYTE *loopback_snap;
 +    size_t loopback_snap_size;
  };
  
  static ULONG_PTR zero_bits = 0;
-@@ -414,6 +421,188 @@ static void ca_wrap_buffer(BYTE *dst, UINT32 dst_offs, UINT32 dst_bytes,
+@@ -414,6 +423,251 @@ static void ca_wrap_buffer(BYTE *dst, UINT32 dst_offs, UINT32 dst_bytes,
          memcpy(dst + dst_offs, src, src_bytes);
  }
  
@@ -95,7 +97,31 @@ index 0ec10fe..8997fff 100644
 +}
 +
 +/* Caller holds stream->lock. Tops up local_buffer from the latest helper
-+ * snapshot; drops oldest on overflow like the converter path does. */
++ * snapshot, metered to realtime pace; feeds silence when no fresh audio
++ * exists so Steam never sees a starving capture (starvation resumption
++ * bursts read as audio gaps and sound choppy). Drops oldest on overflow
++ * like the converter path does. */
++static void loopback_commit(struct coreaudio_stream *stream, UINT32 frames)
++{
++    stream->wri_offs_frames = (UINT32)((stream->wri_offs_frames + frames) % stream->bufsize_frames);
++    if ((UINT64)stream->held_frames + frames > stream->bufsize_frames) {
++        stream->lcl_offs_frames = (UINT32)((stream->lcl_offs_frames + (stream->held_frames + frames - stream->bufsize_frames)) % stream->bufsize_frames);
++        stream->held_frames = stream->bufsize_frames;
++    } else
++        stream->held_frames += frames;
++}
++
++static void loopback_feed_silence(struct coreaudio_stream *stream, UINT32 frames)
++{
++    UINT32 align = stream->fmt->nBlockAlign;
++    UINT32 first = stream->bufsize_frames - stream->wri_offs_frames;
++    if (first > frames) first = frames;
++    silence_buffer(stream, stream->local_buffer + stream->wri_offs_frames * align, first);
++    if (frames > first)
++        silence_buffer(stream, stream->local_buffer, frames - first);
++    loopback_commit(stream, frames);
++}
++
 +static void loopback_pump(struct coreaudio_stream *stream)
 +{
 +    const char *path = getenv("WINE_LOOPBACK_AUDIO_PATH");
@@ -103,13 +129,31 @@ index 0ec10fe..8997fff 100644
 +    UINT32 rate, channels, format, frames;
 +    UINT64 seq, timestamp_ns, first_frame, now_ns, skip, fresh;
 +    UINT32 align = stream->fmt->nBlockAlign;
-+    struct timespec now;
++    struct timespec now, pt;
++    UINT64 pnow, elapsed, due;
 +    size_t need;
-+    FILE *f;    if (!path || !*path) path = "/private/tmp/wine-sck-probe/audio.wsaf";
-+    if (!(f = fopen(path, "rb"))) return;
++    FILE *f;
++
++    /* Realtime budget for this pump call shared by data and silence.
++     * Deliberately no headroom: unconditional padding would let a
++     * fast-polling consumer spin forever on an always-full buffer.
++     * Recovery from an empty buffer gets one period immediately. */
++    clock_gettime(CLOCK_MONOTONIC, &pt);
++    pnow = (UINT64)pt.tv_sec * 1000000000ULL + pt.tv_nsec;
++    elapsed = pnow > stream->loopback_last_ns ? pnow - stream->loopback_last_ns : 0;
++    stream->loopback_last_ns = pnow;
++    due = elapsed * LOOPBACK_RATE / 1000000000ULL;
++    if (due > stream->bufsize_frames / 4) due = stream->bufsize_frames / 4;
++
++    if (!path || !*path) path = "/private/tmp/wine-sck-probe/audio.wsaf";
++    if (!(f = fopen(path, "rb"))) {
++        if (due) loopback_feed_silence(stream, (UINT32)due);
++        return;
++    }
 +    if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr) ||
 +        memcmp(hdr, "WSAF", 4) || wsaf_le32(hdr + 4) != 1) {
 +        fclose(f);
++        if (due) loopback_feed_silence(stream, (UINT32)due);
 +        return;
 +    }
 +    seq = wsaf_le64(hdr + 8);
@@ -122,16 +166,43 @@ index 0ec10fe..8997fff 100644
 +    if (rate != LOOPBACK_RATE || channels != LOOPBACK_CHANNELS || format != 3 ||
 +        !frames || (UINT64)frames * align > WSAF_MAX_BYTES) {
 +        fclose(f);
++        if (due) loopback_feed_silence(stream, (UINT32)due);
 +        return;
 +    }
 +    clock_gettime(CLOCK_REALTIME, &now);
 +    now_ns = (UINT64)now.tv_sec * 1000000000ULL + now.tv_nsec;
 +    if (now_ns < timestamp_ns || now_ns - timestamp_ns > WSAF_STALE_NS) {
 +        fclose(f);
++        if (due) loopback_feed_silence(stream, (UINT32)due);
 +        return;
 +    }
 +    if (seq == stream->loopback_seq) {
 +        fclose(f);
++        /* Same snapshot: feed paced leftovers from the cached copy. */
++        if (!stream->loopback_snap) {
++            if (due) loopback_feed_silence(stream, (UINT32)due);
++            return;
++        }
++        skip = stream->loopback_consumed > stream->loopback_first ?
++            stream->loopback_consumed - stream->loopback_first : 0;
++        if (skip >= stream->loopback_frames) {
++            if (due) loopback_feed_silence(stream, (UINT32)due);
++            return;
++        }
++        fresh = stream->loopback_frames - (UINT32)skip;
++        if (!stream->held_frames && fresh && due < stream->period_frames) {
++            due = fresh;
++            if (due > stream->period_frames) due = stream->period_frames;
++        }
++        if ((UINT64)fresh > due) fresh = (UINT32)due;
++        if (!fresh) return;
++        ca_wrap_buffer(stream->local_buffer,
++                       stream->wri_offs_frames * align,
++                       stream->bufsize_frames * align,
++                       stream->loopback_snap + (size_t)skip * align,
++                       (size_t)fresh * align);
++        loopback_commit(stream, (UINT32)fresh);
++        stream->loopback_consumed += fresh;
 +        return;
 +    }
 +    stream->loopback_seq = seq;
@@ -142,56 +213,50 @@ index 0ec10fe..8997fff 100644
 +    skip = stream->loopback_consumed > first_frame ? stream->loopback_consumed - first_frame : 0;
 +    if (skip >= frames) {
 +        fclose(f);
++        if (due) loopback_feed_silence(stream, (UINT32)due);
 +        return;
 +    }
 +    fresh = frames - (UINT32)skip;
++    if (!stream->held_frames && fresh && due < stream->period_frames) {
++        due = fresh;
++        if (due > stream->period_frames) due = stream->period_frames;
++    }
 +    /* Meter bursty snapshots out at realtime pace. Dumping a whole
 +     * snapshot at once makes the capture position jump backward by up
 +     * to the window size, which Steam reports as audio gaps (and plays
-+     * as choppy stutter). Unfed leftovers stay unconsumed for the next
-+     * overlapping snapshot. */
-+    {
-+        struct timespec pt;
-+        UINT64 pnow, elapsed, due;
-+        clock_gettime(CLOCK_MONOTONIC, &pt);
-+        pnow = (UINT64)pt.tv_sec * 1000000000ULL + pt.tv_nsec;
-+        elapsed = pnow > stream->loopback_last_ns ? pnow - stream->loopback_last_ns : 0;
-+        stream->loopback_last_ns = pnow;
-+        due = elapsed * LOOPBACK_RATE / 1000000000ULL + stream->period_frames;
-+        if (due > stream->bufsize_frames / 4) due = stream->bufsize_frames / 4;
-+        if ((UINT64)fresh > due) fresh = (UINT32)due;
-+        if (!fresh) {
-+            fclose(f);
-+            return;
-+        }
++     * as choppy stutter). Unfed leftovers stay cached for later pumps. */
++    if ((UINT64)fresh > due) fresh = (UINT32)due;
++    if (!fresh) {
++        fclose(f);
++        return;
 +    }
-+    need = (size_t)fresh * align;
++    need = (size_t)frames * align;
 +    if (need > stream->loopback_snap_size) {
 +        free(stream->loopback_snap);
 +        stream->loopback_snap = malloc(need);
 +        stream->loopback_snap_size = stream->loopback_snap ? need : 0;
 +        if (!stream->loopback_snap) {
 +            fclose(f);
++            if (due) loopback_feed_silence(stream, (UINT32)due);
 +            return;
 +        }
 +    }
-+    if (fseek(f, (long)(WSAF_HEADER_SIZE + (size_t)skip * align), SEEK_SET) ||
++    if (fseek(f, (long)WSAF_HEADER_SIZE, SEEK_SET) ||
 +        fread(stream->loopback_snap, 1, need, f) != need) {
 +        fclose(f);
++        if (due) loopback_feed_silence(stream, (UINT32)due);
 +        return;
 +    }
 +    fclose(f);
 +
++    stream->loopback_first = first_frame;
++    stream->loopback_frames = frames;
 +    ca_wrap_buffer(stream->local_buffer,
 +                   stream->wri_offs_frames * align,
 +                   stream->bufsize_frames * align,
-+                   stream->loopback_snap, need);
-+    stream->wri_offs_frames = (UINT32)((stream->wri_offs_frames + fresh) % stream->bufsize_frames);
-+    if ((UINT64)stream->held_frames + fresh > stream->bufsize_frames) {
-+        stream->lcl_offs_frames = (UINT32)((stream->lcl_offs_frames + (stream->held_frames + fresh - stream->bufsize_frames)) % stream->bufsize_frames);
-+        stream->held_frames = stream->bufsize_frames;
-+    } else
-+        stream->held_frames += (UINT32)fresh;
++                   stream->loopback_snap + (size_t)skip * align,
++                   (size_t)fresh * align);
++    loopback_commit(stream, (UINT32)fresh);
 +    stream->loopback_consumed = first_frame + skip + fresh;
 +}
 +
@@ -212,7 +277,7 @@ index 0ec10fe..8997fff 100644
  /* we need to trigger CA to pull data from the device and give it to us
   *
   * raw data from CA is stored in cap_buffer, possibly via wrap_buffer
-@@ -809,6 +998,37 @@ static NTSTATUS unix_create_stream(void *args)
+@@ -809,6 +1063,37 @@ static NTSTATUS unix_create_stream(void *args)
      }
  
      stream->period_frames = muldiv(params->period, stream->fmt->nSamplesPerSec, 10000000);
@@ -250,7 +315,7 @@ index 0ec10fe..8997fff 100644
      if (stream->period_frames == 0)
      {
          params->result = E_INVALIDARG;
-@@ -923,6 +1143,7 @@ static NTSTATUS unix_release_stream( void *args )
+@@ -923,6 +1208,7 @@ static NTSTATUS unix_release_stream( void *args )
      free(stream->resamp_buffer);
      free(stream->wrap_buffer);
      free(stream->cap_buffer);
@@ -258,7 +323,7 @@ index 0ec10fe..8997fff 100644
      if(stream->local_buffer){
          size = 0;
          NtFreeVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer,
-@@ -1092,7 +1313,15 @@ static NTSTATUS unix_get_mix_format(void *args)
+@@ -1092,7 +1378,15 @@ static NTSTATUS unix_get_mix_format(void *args)
      UInt32 size;
      OSStatus sc;
      int i;
@@ -275,7 +340,7 @@ index 0ec10fe..8997fff 100644
  
      params->fmt->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
  
-@@ -1184,7 +1413,14 @@ static NTSTATUS unix_is_format_supported(void *args)
+@@ -1184,7 +1478,14 @@ static NTSTATUS unix_is_format_supported(void *args)
      AudioStreamBasicDescription dev_desc;
      AudioConverterRef converter;
      AudioComponentInstance unit;
@@ -291,7 +356,7 @@ index 0ec10fe..8997fff 100644
  
      unit = get_audiounit(params->flow, dev_id);
  
-@@ -1202,6 +1438,13 @@ static NTSTATUS unix_get_device_period(void *args)
+@@ -1202,6 +1503,13 @@ static NTSTATUS unix_get_device_period(void *args)
      unsigned int n_samples_per_sec;
      AudioDeviceID dev_id;
  
@@ -305,7 +370,7 @@ index 0ec10fe..8997fff 100644
      dev_id = dev_id_from_device(params->device);
      if (FAILED(params->result = get_device_sample_rate(dev_id, params->flow, &n_samples_per_sec)))
          return STATUS_SUCCESS;
-@@ -1290,6 +1533,12 @@ static void capture_resample(struct coreaudio_stream *stream)
+@@ -1290,6 +1598,12 @@ static void capture_resample(struct coreaudio_stream *stream)
                                           stream->fmt->nSamplesPerSec);
      OSStatus sc;
  
@@ -318,7 +383,7 @@ index 0ec10fe..8997fff 100644
      /* the resampling process often needs more source frames than we'd
       * guess from a straight conversion using the sample rate ratio. so
       * only convert if we have extra source data. */
-@@ -1406,6 +1655,13 @@ static NTSTATUS unix_get_latency(void *args)
+@@ -1406,6 +1720,13 @@ static NTSTATUS unix_get_latency(void *args)
  
      os_unfair_lock_lock(&stream->lock);
  
@@ -332,7 +397,7 @@ index 0ec10fe..8997fff 100644
      addr.mScope = get_scope(stream->flow);
      addr.mSelector = kAudioDevicePropertyLatency;
      addr.mElement = 0;
-@@ -1955,7 +2211,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
+@@ -1955,7 +2276,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
      unix_get_capture_buffer,
      unix_release_capture_buffer,
      unix_is_format_supported,
@@ -341,7 +406,7 @@ index 0ec10fe..8997fff 100644
      unix_get_mix_format,
      unix_get_device_period,
      unix_get_buffer_size,
-@@ -2141,6 +2397,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
+@@ -2141,6 +2462,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
      return STATUS_SUCCESS;
  }
  
@@ -373,7 +438,7 @@ index 0ec10fe..8997fff 100644
  static NTSTATUS unix_wow64_get_mix_format(void *args)
  {
      struct
-@@ -2405,7 +2686,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
+@@ -2405,7 +2751,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
      unix_wow64_get_capture_buffer,
      unix_release_capture_buffer,
      unix_wow64_is_format_supported,

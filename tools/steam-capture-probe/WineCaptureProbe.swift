@@ -133,11 +133,17 @@ final class AudioOutput: NSObject, SCStreamOutput {
     private var srcRate: Double = 48000
     private var srcOK = false
     private var audioFrames: UInt64 = 0
+    private var lastBuffer = Date.distantPast
+    private(set) var hadAudio = false
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, CMSampleBufferDataIsReady(sb),
               let fmtDesc = CMSampleBufferGetFormatDescription(sb),
               let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc) else { return }
+        lock.lock()
+        lastBuffer = Date()
+        hadAudio = true
+        lock.unlock()
         let asbd = asbdPtr.pointee
         if !loggedFormat {
             loggedFormat = true
@@ -204,6 +210,12 @@ final class AudioOutput: NSObject, SCStreamOutput {
         lock.unlock()
     }
 
+    func secondsSilent() -> Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return Date().timeIntervalSince(lastBuffer)
+    }
+
     private func writeSnapshotLocked() {
         let frames = window.count / 2
         guard frames > 0 else { return }
@@ -244,6 +256,36 @@ final class CaptureDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         verboseLog("Starting primary-display ScreenCaptureKit stream.")
         Task { await startCapture() }
+        Task { await audioWatchdog() }
+    }
+
+    /// SCK audio delivery can stall silently (video keeps flowing).
+    /// Re-attach the audio output when an established tap goes quiet.
+    private var audioEverFlowed = false
+
+    private func audioWatchdog() async {
+        while true {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let st = stream, let ao = audioOutput else { continue }
+            if ao.hadAudio { audioEverFlowed = true }
+            guard audioEverFlowed, ao.secondsSilent() > 5 else { continue }
+            log("audio tap silent 5s+, re-attaching")
+            do {
+                try st.removeStreamOutput(ao, type: .audio)
+            } catch {
+                verboseLog("audio output removal: \(error)")
+            }
+            let fresh = AudioOutput()
+            do {
+                try st.addStreamOutput(fresh, type: .audio,
+                                       sampleHandlerQueue: DispatchQueue(label: "WineCaptureProbe.audio"))
+                self.audioOutput = fresh
+                log("audio tap re-attached")
+            } catch {
+                log("audio tap re-attach failed: \(error)")
+                self.audioOutput = fresh
+            }
+        }
     }
 
     private func startCapture() async {
