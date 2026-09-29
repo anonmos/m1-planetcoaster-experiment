@@ -135,6 +135,7 @@ final class AudioOutput: NSObject, SCStreamOutput {
     private var audioFrames: UInt64 = 0
     private var lastBuffer = Date.distantPast
     private(set) var hadAudio = false
+    private let attachedAt = Date()
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, CMSampleBufferDataIsReady(sb),
@@ -195,14 +196,14 @@ final class AudioOutput: NSObject, SCStreamOutput {
 
         lock.lock()
         window.append(contentsOf: out)
-        if window.count > 48000 { window.removeFirst(window.count - 48000) }
+        if window.count > 24000 { window.removeFirst(window.count - 24000) }
         totalFrames += UInt64(out.count / 2)
         let prevFrames = audioFrames
         audioFrames += UInt64(out.count / 2)
         if prevFrames == 0 || audioFrames / 240000 != prevFrames / 240000 {
             verboseLog("audio feeding: \(totalFrames) frames total")
         }
-        let due = Date().timeIntervalSince(lastWrite) >= 0.1 && window.count >= 4800
+        let due = Date().timeIntervalSince(lastWrite) >= 0.025 && window.count >= 1200
         if due {
             lastWrite = Date()
             writeSnapshotLocked()
@@ -214,6 +215,13 @@ final class AudioOutput: NSObject, SCStreamOutput {
         lock.lock()
         defer { lock.unlock() }
         return Date().timeIntervalSince(lastBuffer)
+    }
+
+    /// Fresh outputs need time for SCK to start delivering before they
+    /// can be judged stalled; otherwise the watchdog churns outputs
+    /// faster than audio can arrive and breaks delivery itself.
+    func age() -> Double {
+        Date().timeIntervalSince(attachedAt)
     }
 
     private func writeSnapshotLocked() {
@@ -268,7 +276,7 @@ final class CaptureDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard let st = stream, let ao = audioOutput else { continue }
             if ao.hadAudio { audioEverFlowed = true }
-            guard audioEverFlowed, ao.secondsSilent() > 5 else { continue }
+            guard audioEverFlowed, ao.age() > 8, ao.secondsSilent() > 5 else { continue }
             log("audio tap silent 5s+, re-attaching")
             do {
                 try st.removeStreamOutput(ao, type: .audio)
