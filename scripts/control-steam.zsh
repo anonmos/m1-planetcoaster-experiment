@@ -25,6 +25,10 @@ STEAM_PIDFILE="/private/tmp/planetcoaster2-controller-steam-$PFX_TAG.pid"
 PC2_PIDFILE="/private/tmp/planetcoaster2-controller-pc2-$PFX_TAG.pid"
 EXP33_PIDFILE="/private/tmp/planetcoaster2-controller-33-$PFX_TAG.pid"
 ER_PIDFILE="/private/tmp/planetcoaster2-controller-er-$PFX_TAG.pid"
+HELPER_APP="$ROOT/build/WineCaptureProbe.app"
+HELPER_BIN="$HELPER_APP/Contents/MacOS/WineCaptureProbe"
+SCK_DIR="/private/tmp/wine-sck-probe"
+SCK_LIVE_LOG="/private/tmp/wine-sck-live.log"
 
 usage() {
   print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er]'
@@ -175,15 +179,65 @@ stop_prefix_server() {
   sleep 3
 }
 
+capture_frame_fresh() {
+  local frame="$SCK_DIR/latest-frame.wscf"
+  [[ -f "$frame" ]] || return 1
+  local now mtime
+  now=$(date +%s)
+  mtime=$(stat -f %m "$frame" 2>/dev/null) || return 1
+  (( now - mtime <= 5 ))
+}
+
+start_capture_helper() {
+  mkdir -p "$SCK_DIR"
+  if pgrep -qf WineCaptureProbe && capture_frame_fresh; then
+    print 'Capture helper already running.'
+    return 0
+  fi
+  pkill -x WineCaptureProbe 2>/dev/null || true
+  pkill -f WineCaptureProbe 2>/dev/null || true
+  sleep 1
+  : > "$SCK_LIVE_LOG"
+  rm -f /private/tmp/wine-sck-gdi-pgetimage.log /private/tmp/wine-sck-gdi-pixels.log
+  if [[ ! -x "$HELPER_BIN" ]]; then
+    print -u2 "Capture helper missing at $HELPER_BIN."
+    return 1
+  fi
+  open /Users/tim/Workspace/gptk-steam-emulation/build/WineCaptureProbe.app
+  local attempt seen_denied=0
+  for attempt in {1..20}; do
+    sleep 1
+    if grep -q 'Stream started for display' "$SCK_LIVE_LOG" 2>/dev/null && capture_frame_fresh; then
+      print 'Capture helper started.'
+      return 0
+    fi
+    if grep -q '\-3801' "$SCK_LIVE_LOG" 2>/dev/null; then
+      seen_denied=1
+    fi
+  done
+  if (( seen_denied )); then
+    print -u2 'Capture helper denied by Screen Recording permission. Enable WineCaptureProbe in System Settings and re-run.'
+    return 1
+  fi
+  print -u2 'Capture helper did not publish a frame in time. Streaming will be black until it recovers.'
+  return 1
+}
+
+stop_capture_helper() {
+  pkill -x WineCaptureProbe 2>/dev/null || true
+  pkill -f WineCaptureProbe 2>/dev/null || true
+}
+
 start_steam() {
   if (( ${#$(find_pids steam)} )); then
     print 'Steam is already running for this bottle.'
     return 0
   fi
+  start_capture_helper || true
   : > "$STEAM_LOG"
   cd "$STEAM_DIR"
   print 'Starting Steam...'
-  ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -tcp -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing >>"$STEAM_LOG" 2>&1 ) &
+  ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -tcp -no-cef-sandbox  >>"$STEAM_LOG" 2>&1 ) &
   print $! > "$STEAM_PIDFILE"
   print "Steam started. Log: $STEAM_LOG"
 }
@@ -244,5 +298,5 @@ case "$1 $2" in
   'stop steam') stop_scope steam ;;
   'stop game') stop_scope game ;;
   'start all') start_steam && wait_for_steam && start_game ;;
-  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
+  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
 esac
