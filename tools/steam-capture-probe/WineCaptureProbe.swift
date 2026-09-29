@@ -117,10 +117,126 @@ final class FrameOutput: NSObject, SCStreamOutput {
     }
 }
 
+private let audioPath = "/private/tmp/wine-sck-probe/audio.wsaf"
+private let audioTmpPath = "/private/tmp/wine-sck-probe/audio.wsaf.tmp"
+
+/// System-audio tap feeding Wine's virtual loopback device.
+/// Accumulates canonical 48 kHz stereo float32 and publishes WSAF
+/// snapshots (tmp-file + rename, same pattern as the video frames).
+final class AudioOutput: NSObject, SCStreamOutput {
+    private let lock = NSLock()
+    private var totalFrames: UInt64 = 0
+    private var seq: UInt64 = 0
+    private var window: [Float] = []
+    private var lastWrite = Date.distantPast
+    private var loggedFormat = false
+    private var srcRate: Double = 48000
+    private var srcOK = false
+    private var audioFrames: UInt64 = 0
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sb: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .audio, CMSampleBufferDataIsReady(sb),
+              let fmtDesc = CMSampleBufferGetFormatDescription(sb),
+              let asbdPtr = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc) else { return }
+        let asbd = asbdPtr.pointee
+        if !loggedFormat {
+            loggedFormat = true
+            log("SCK audio format: rate \(asbd.mSampleRate) ch \(asbd.mChannelsPerFrame) bits \(asbd.mBitsPerChannel) flags \(asbd.mFormatFlags)")
+            let isFloat = (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+            srcOK = (asbd.mChannelsPerFrame == 2 && asbd.mBitsPerChannel == 32 && isFloat)
+            srcRate = asbd.mSampleRate
+            if !srcOK { log("Unsupported SCK audio layout, dropping audio") }
+        }
+        guard srcOK else { return }
+        guard let block = CMSampleBufferGetDataBuffer(sb) else { return }
+        var length = 0
+        var ptr: UnsafeMutablePointer<CChar>?
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &ptr) == noErr,
+              let base = ptr, length > 0 else { return }
+        let inFrames = length / 8
+        guard inFrames > 0 else { return }
+        let planar = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+        let src = UnsafeBufferPointer(start: base.withMemoryRebound(to: Float.self, capacity: length / 4) { $0 }, count: inFrames * 2)
+
+        // Canonical interleaved float32 at the source rate.
+        var staged: [Float] = []
+        staged.reserveCapacity(inFrames * 2)
+        if planar {
+            for i in 0..<inFrames { staged.append(src[i]); staged.append(src[inFrames + i]) }
+        } else {
+            staged.append(contentsOf: src)
+        }
+
+        // Linear-resample to 48 kHz when the source differs.
+        var out: [Float] = []
+        out.reserveCapacity(inFrames + 8)
+        if srcRate == 48000 {
+            out = staged
+        } else {
+            let ratio = srcRate / 48000.0
+            let need = Int((Double(inFrames) / ratio).rounded(.down))
+            for i in 0..<need {
+                let pos = Double(i) * ratio
+                let j = Int(pos)
+                let f = Float(pos - Double(j))
+                let a = min(j, inFrames - 1) * 2
+                let b = min(j + 1, inFrames - 1) * 2
+                out.append(staged[a] + (staged[b] - staged[a]) * f)
+                out.append(staged[a + 1] + (staged[b + 1] - staged[a + 1]) * f)
+            }
+        }
+        guard !out.isEmpty else { return }
+
+        lock.lock()
+        window.append(contentsOf: out)
+        if window.count > 48000 { window.removeFirst(window.count - 48000) }
+        totalFrames += UInt64(out.count / 2)
+        let prevFrames = audioFrames
+        audioFrames += UInt64(out.count / 2)
+        if prevFrames == 0 || audioFrames / 240000 != prevFrames / 240000 {
+            verboseLog("audio feeding: \(totalFrames) frames total")
+        }
+        let due = Date().timeIntervalSince(lastWrite) >= 0.1 && window.count >= 4800
+        if due {
+            lastWrite = Date()
+            writeSnapshotLocked()
+        }
+        lock.unlock()
+    }
+
+    private func writeSnapshotLocked() {
+        let frames = window.count / 2
+        guard frames > 0 else { return }
+        var data = Data()
+        data.reserveCapacity(48 + window.count * 4)
+        func le32(_ v: UInt32) { var x = v.littleEndian; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
+        func le64(_ v: UInt64) { var x = v.littleEndian; withUnsafeBytes(of: &x) { data.append(contentsOf: $0) } }
+        data.append(contentsOf: [0x57, 0x53, 0x41, 0x46]) // WSAF
+        le32(1)
+        seq += 1
+        le64(seq)
+        le64(UInt64(Date().timeIntervalSince1970 * 1_000_000_000))
+        le32(48000); le32(2); le32(3)
+        le32(UInt32(frames))
+        le64(totalFrames - UInt64(frames))
+        window.withUnsafeBytes { data.append(contentsOf: $0) }
+        let tmpURL = URL(fileURLWithPath: audioTmpPath)
+        do {
+            try data.write(to: tmpURL, options: [])
+            if rename(audioTmpPath, audioPath) != 0 {
+                log("audio snapshot rename failed: errno \(errno)")
+            }
+        } catch {
+            log("audio snapshot write failed: \(error)")
+        }
+    }
+}
+
 @MainActor
 final class CaptureDelegate: NSObject, NSApplicationDelegate {
     private var stream: SCStream?
     private var output: FrameOutput?
+    private var audioOutput: AudioOutput?
     private var windowStreams: [SCStream] = []
     private var windowOutputs: [FrameOutput] = []
 
@@ -148,14 +264,21 @@ final class CaptureDelegate: NSObject, NSApplicationDelegate {
             config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
             config.queueDepth = 3
             config.showsCursor = false
+            config.capturesAudio = true
+            config.sampleRate = 48000
+            config.channelCount = 2
 
             let frameOutput = FrameOutput()
             guard frameOutput.isOpen else { log("Could not open frame output file."); return }
             let captureStream = SCStream(filter: filter, configuration: config, delegate: nil)
             try captureStream.addStreamOutput(frameOutput, type: .screen,
                                               sampleHandlerQueue: DispatchQueue(label: "WineCaptureProbe.frames"))
+            let audioOut = AudioOutput()
+            try captureStream.addStreamOutput(audioOut, type: .audio,
+                                              sampleHandlerQueue: DispatchQueue(label: "WineCaptureProbe.audio"))
             try await captureStream.startCapture()
             self.output = frameOutput
+            self.audioOutput = audioOut
             self.stream = captureStream
             log("Stream started for display \(display.displayID), requested \(width)x\(height); writing \(framePath).")
 

@@ -86,6 +86,40 @@ Want `Stream started for display ...` with no `-3801`, and a frame file
 seconds old. On the next Remote Play session the server bitrate in
 `streaming_log.txt` should read in the MBit/s range instead of ~150 Kbit/s.
 
+## Audio fix (same bridge pattern)
+
+Symptom: video streamed, but silence. Host log: `Recording system audio`
+→ mix format fine → `couldn't initialize the audio client loopback:
+0x80004001` (`E_NOTIMPL`) → `Failed to init system audio recording`.
+
+Cause: Steam opens WASAPI `IAudioClient::Initialize(..., LOOPBACK)` on
+the render endpoint. Wine's `mmdevapi` forwards that to
+`get_loopback_capture_device` in the backend driver. `winepulse`
+implements it (via the PulseAudio monitor source); `winecoreaudio` had no
+handler at all, and macOS offers no monitor device anyway.
+
+Fix, mirroring video:
+
+- `WineForge/dlls/winecoreaudio.drv/coreaudio.c`:
+  virtual `Wine SCK Loopback` capture device (stereo 48 kHz float32).
+  `get_loopback_capture_device` (+ wow64 twin), mix/format/period/latency
+  branches, and a unit-less stream whose `capture_resample` hook pumps
+  PCM from WSAF snapshots into the normal capture bookkeeping. Empty
+  until fed (silence, but `S_OK`). Exported as
+  `patches/winecoreaudio-sck-loopback.patch`.
+- Helper publishes `audio.wsaf` snapshots (tmp-file + rename): SCK system
+  audio → canonical 48 kHz stereo float32 → 0.5 s window every ~100 ms.
+  Two gotchas lived here: `SCStreamConfiguration` needs
+  `sampleRate = 48000` + `channelCount = 2` set explicitly or SCK
+  delivers zero audio buffers; and SCK delivers planar float32
+  (`flags 41`), which must be interleaved before writing.
+- Fast iteration without Steam: `tools/audio_loopback_probe.c` (+
+  `audio_loopback_probe.exe`, `tools/run-audio-loopback-probe.zsh`)
+  reproduces Steam's exact init sequence and reports packet/nonsilent/peak
+  stats. It printed `0x80004001` before the fix, `0x00000000` after.
+- The existing Screen Recording grant covers system-audio capture; no new
+  permission type. Helper rebuilds still need the remove/re-add dance.
+
 ## Troubleshooting
 
 | Observation | Meaning | Action |
