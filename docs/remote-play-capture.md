@@ -97,8 +97,11 @@ seconds old. On the next Remote Play session the server bitrate in
 
 ## Full rebuild / recovery
 
-The `WineForge/` checkout itself is git-ignored and lives only on
-`local-heavy` (plus whatever upstream has, minus our patch). Everything
+The `WineForge/` checkout itself is git-ignored and lives on `local-heavy`
+as a primary copy, with two backups: this repo's `patches/` exports, and
+the fork at `github.com/anonmos/WineForge`, branch
+`gptk4-tahoe-checkpoint` (contains the session-gate removal, Tahoe
+patches, and the SCK `pGetImage` commit). Everything
 needed to recreate the capture stack is versioned in this repo:
 
 - `patches/wineforge-local-source.patch` — pre-existing macOS/Tahoe
@@ -120,6 +123,15 @@ git clone https://github.com/Alien4042x/WineForge.git WineForge
 git -C WineForge checkout 59dda45dba2229cce9eb83e6e4e55b408ec37e5e
 git -C WineForge apply ../patches/wineforge-local-source.patch
 git -C WineForge apply ../patches/winemac-sck-capture.patch
+zsh scripts/build-wineforge-full.zsh
+zsh scripts/build-winecaptureprobe.zsh
+```
+
+Shortcut when the fork is reachable — it already contains all three
+layers, so the patch steps are unnecessary:
+
+```zsh
+git clone -b gptk4-tahoe-checkpoint git@github.com:anonmos/WineForge.git WineForge
 zsh scripts/build-wineforge-full.zsh
 zsh scripts/build-winecaptureprobe.zsh
 ```
