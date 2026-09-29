@@ -97,7 +97,12 @@ int main(void) {
             IAudioCaptureClient_ReleaseBuffer(cap, frames);
             }
             if (!drained) empties++;
-            Sleep(10);
+            /* True ~30ms cadence: Wine Sleep undersleeps, so spin on the
+               tick count to emulate a gulpy WASAPI client. */
+            {
+                DWORD w = GetTickCount();
+                while (GetTickCount() - w < 30) Sleep(1);
+            }
         }
         printf("capture: %llu packets, %llu samples, nonsilent %llu, peak %f\n",
                packets, total, nonsilent, peak);
