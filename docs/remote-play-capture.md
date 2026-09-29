@@ -117,6 +117,17 @@ Fix, mirroring video:
   `audio_loopback_probe.exe`, `tools/run-audio-loopback-probe.zsh`)
   reproduces Steam's exact init sequence and reports packet/nonsilent/peak
   stats. It printed `0x80004001` before the fix, `0x00000000` after.
+- Choppiness root causes found via Steam's `Over 960 sample audio gap`
+  log lines: (1) whole snapshots dumped at once made capture position
+  jump backward — fixed by metering ingestion to elapsed time;
+  (2) starving Steam on missing/stale snapshots — fixed by feeding
+  paced silence instead, so quiet scenes and tap stalls stay smooth;
+  (3) unconditional per-pump headroom let fast pollers spin on an
+  always-full buffer — removed, kept only an empty-buffer recovery kick;
+  (4) SCK audio delivery can stall silently while video flows — helper
+  watchdog re-attaches the audio output after 5 s of quiet on an
+  established tap (visible as `audio tap silent 5s+, re-attaching` in
+  the live log).
 - The existing Screen Recording grant covers system-audio capture; no new
   permission type. Helper rebuilds still need the remove/re-add dance.
 
