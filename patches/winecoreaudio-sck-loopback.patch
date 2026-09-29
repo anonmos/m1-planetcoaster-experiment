@@ -1,5 +1,5 @@
 diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
-index 0ec10fe..f03a915 100644
+index 0ec10fe..b0a5bce 100644
 --- a/dlls/winecoreaudio.drv/coreaudio.c
 +++ b/dlls/winecoreaudio.drv/coreaudio.c
 @@ -36,6 +36,7 @@
@@ -291,9 +291,9 @@ index 0ec10fe..f03a915 100644
 +        stream->flow = eCapture;
 +        stream->flags = params->flags;
 +        stream->share = params->share;
-+        stream->period_frames = LOOPBACK_RATE / 100;
++        stream->period_frames = LOOPBACK_RATE / 200;
 +        if (!stream->period_frames) stream->period_frames = 1;
-+        stream->period = 100000;
++        stream->period = 50000;
 +        stream->bufsize_frames = muldiv(params->duration, LOOPBACK_RATE, 10000000);
 +        if (!stream->bufsize_frames) stream->bufsize_frames = LOOPBACK_RATE;
 +        size = stream->bufsize_frames * stream->fmt->nBlockAlign;
@@ -397,7 +397,22 @@ index 0ec10fe..f03a915 100644
      addr.mScope = get_scope(stream->flow);
      addr.mSelector = kAudioDevicePropertyLatency;
      addr.mElement = 0;
-@@ -1955,7 +2276,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
+@@ -1464,6 +1785,14 @@ static void unix_timer_loop(void *args)
+     next.QuadPart = last.QuadPart + stream->period;
+ 
+     while(!stream->please_quit){
++        if (stream->loopback) {
++            /* Hardware equivalent: accumulate capture data on a realtime
++             * tick independent of consumer polling, so drain loops always
++             * find smooth data and positions advance evenly. */
++            os_unfair_lock_lock(&stream->lock);
++            loopback_pump(stream);
++            os_unfair_lock_unlock(&stream->lock);
++        }
+         NtSetEvent(stream->event, NULL);
+         NtDelayExecution(FALSE, &delay);
+         NtQueryPerformanceCounter(&last, NULL);
+@@ -1955,7 +2284,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
      unix_get_capture_buffer,
      unix_release_capture_buffer,
      unix_is_format_supported,
@@ -406,7 +421,7 @@ index 0ec10fe..f03a915 100644
      unix_get_mix_format,
      unix_get_device_period,
      unix_get_buffer_size,
-@@ -2141,6 +2462,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
+@@ -2141,6 +2470,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
      return STATUS_SUCCESS;
  }
  
@@ -438,7 +453,7 @@ index 0ec10fe..f03a915 100644
  static NTSTATUS unix_wow64_get_mix_format(void *args)
  {
      struct
-@@ -2405,7 +2751,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
+@@ -2405,7 +2759,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
      unix_wow64_get_capture_buffer,
      unix_release_capture_buffer,
      unix_wow64_is_format_supported,

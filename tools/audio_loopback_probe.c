@@ -57,19 +57,25 @@ int main(void) {
 
     {
         UINT64 total = 0, nonsilent = 0, packets = 0, i;
+        UINT64 empties = 0, lastprint = 0;
         float peak = 0.0f;
         UINT64 lastpos = 0;
         int pprinted = 0;
         DWORD t0 = GetTickCount();
         while (GetTickCount() - t0 < 3000) {
             UINT32 n = 0;
-            BYTE *buf = NULL;
-            UINT32 frames = 0;
-            DWORD flags = 0;
-            UINT64 pos = 0, pcpos = 0;
-            if (FAILED(IAudioCaptureClient_GetNextPacketSize(cap, &n))) break;
-            if (!n) { Sleep(20); continue; }
-            if (FAILED(IAudioCaptureClient_GetBuffer(cap, &buf, &frames, &flags, &pos, &pcpos))) break;
+            int drained = 0;
+            /* Drain everything currently available, then wait one period:
+               mimics a sane WASAPI client instead of a spin loop. */
+            for (;;) {
+                BYTE *buf = NULL;
+                UINT32 frames = 0;
+                DWORD flags = 0;
+                UINT64 pos = 0, pcpos = 0;
+                if (FAILED(IAudioCaptureClient_GetNextPacketSize(cap, &n))) break;
+                if (!n) break;
+                if (FAILED(IAudioCaptureClient_GetBuffer(cap, &buf, &frames, &flags, &pos, &pcpos))) break;
+                drained = 1;
             packets++;
             if (pprinted < 40) {
                 long long d = packets == 1 ? 0 : (long long)pos - (long long)lastpos;
@@ -89,9 +95,13 @@ int main(void) {
                 total += count;
             }
             IAudioCaptureClient_ReleaseBuffer(cap, frames);
+            }
+            if (!drained) empties++;
+            Sleep(10);
         }
         printf("capture: %llu packets, %llu samples, nonsilent %llu, peak %f\n",
                packets, total, nonsilent, peak);
+        printf("empty polls (starved): %llu\n", empties);
     }
 
     CoTaskMemFree(mix);
