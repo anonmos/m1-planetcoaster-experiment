@@ -94,3 +94,40 @@ seconds old. On the next Remote Play session the server bitrate in
 | Consent dialog loops on every launch | Helper build changed identity (or grant never bound) | Remove/re-add once, stop rebuilding |
 | `did not publish a frame in time` | Helper up but no frames | Check permission, check display sleep/lock |
 | Bitrate ~150 Kbit/s, black | Serving black/stale frames | Check frame freshness + live log |
+
+## Full rebuild / recovery
+
+The `WineForge/` checkout itself is git-ignored and lives only on
+`local-heavy` (plus whatever upstream has, minus our patch). Everything
+needed to recreate the capture stack is versioned in this repo:
+
+- `patches/wineforge-local-source.patch` — pre-existing macOS/Tahoe
+  source fixes (Mach tracing, freetype paths, virtual display,
+  `macdrv_main` session-gate removal).
+- `patches/winemac-sck-capture.patch` — the SCK bridge: `pGetImage` in
+  `dlls/winemac.drv/gdi.c` serving `/private/tmp/wine-sck-probe/`.
+  Exported from nested commit `27b59d9` (`git diff bb6da7b 27b59d9`).
+  Re-export after any future `gdi.c` change with that same command.
+- `tools/steam-capture-probe/WineCaptureProbe.swift` — helper source.
+- `scripts/build-winecaptureprobe.zsh` — helper build.
+- `scripts/control-steam.zsh` — helper lifecycle.
+
+From scratch on a fresh machine (Rosetta + Xcode license first, see
+SUMMARY.md recovery outline):
+
+```zsh
+git clone https://github.com/Alien4042x/WineForge.git WineForge
+git -C WineForge checkout 59dda45dba2229cce9eb83e6e4e55b408ec37e5e
+git -C WineForge apply ../patches/wineforge-local-source.patch
+git -C WineForge apply ../patches/winemac-sck-capture.patch
+zsh scripts/build-wineforge-full.zsh
+zsh scripts/build-winecaptureprobe.zsh
+```
+
+Then restore the bottle (`scripts/restore-bottle.zsh` + game installs),
+grant Screen Recording via remove/re-add (never just the toggle), and
+`start steam`. Shortcut when only `gdi.c` changed and the build tree
+still exists: `arch -x86_64 make -C build/wineforge-tls-build -j10`
+followed by `make -C build/wineforge-tls-build install` — no full
+rebuild, but the helper binary still changes identity, so the
+remove/re-add permission step applies to helper rebuilds regardless.
