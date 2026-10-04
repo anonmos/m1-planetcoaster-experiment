@@ -26,4 +26,4 @@ arch -x86_64 env \
   FONTCONFIG_PATH='/opt/homebrew/etc/fonts' \
   WINEESYNC=0 WINEMSYNC=0 WINEFSYNC=0 \
   WINEDEBUG="${WINE_DEBUG_MODE:-+err}" \
-  "$R/bin/wine" "$EXE"
+  "$R/bin/wine" "$EXE" "$@"

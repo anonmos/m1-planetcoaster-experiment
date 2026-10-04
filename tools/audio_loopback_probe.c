@@ -6,7 +6,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <stdio.h>
 
-int main(void) {
+int main(int argc, char **argv) {
     HRESULT hr;
     IMMDeviceEnumerator *penum = NULL;
     IMMDevice *dev = NULL;
@@ -16,6 +16,8 @@ int main(void) {
     LPWSTR id = NULL;
     IPropertyStore *props = NULL;
     PROPVARIANT name;
+    const char *dump_path = (argc > 1) ? argv[1] : NULL;
+    FILE *dump = NULL;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
@@ -64,6 +66,11 @@ int main(void) {
     if (FAILED(hr)) { printf("GetService capture: 0x%08lx\n", hr); return 14; }
     hr = IAudioClient_Start(client);
     if (FAILED(hr)) { printf("Start: 0x%08lx\n", hr); return 15; }
+    if (dump_path) {
+        dump = fopen(dump_path, "wb");
+        if (!dump) { printf("cannot open dump file\n"); return 16; }
+        printf("dumping raw f32 stereo to %s\n", dump_path);
+    }
 
     {
         UINT64 total = 0, nonsilent = 0, packets = 0, i;
@@ -72,7 +79,8 @@ int main(void) {
         UINT64 lastpos = 0;
         int pprinted = 0;
         DWORD t0 = GetTickCount();
-        while (GetTickCount() - t0 < 3000) {
+        DWORD budget = dump_path ? 10000 : 3000;
+        while (GetTickCount() - t0 < budget) {
             UINT32 n = 0;
             int drained = 0;
             /* Drain everything currently available, then wait one period:
@@ -103,6 +111,7 @@ int main(void) {
                     if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && v > 0.000001f) nonsilent++;
                 }
                 total += count;
+                if (dump) fwrite(s, 4, (size_t)count, dump);
             }
             IAudioCaptureClient_ReleaseBuffer(cap, frames);
             }
@@ -117,6 +126,7 @@ int main(void) {
         printf("capture: %llu packets, %llu samples, nonsilent %llu, peak %f\n",
                packets, total, nonsilent, peak);
         printf("empty polls (starved): %llu\n", empties);
+        if (dump) fclose(dump);
     }
 
     CoTaskMemFree(mix);
