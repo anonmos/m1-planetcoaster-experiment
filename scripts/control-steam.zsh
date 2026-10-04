@@ -228,11 +228,30 @@ stop_capture_helper() {
   pkill -f WineCaptureProbe 2>/dev/null || true
 }
 
+hold_awake() {
+  mkdir -p "$SCK_DIR"
+  if [[ -f "$SCK_DIR/caffeinate.pid" ]] && kill -0 "$(cat "$SCK_DIR/caffeinate.pid")" 2>/dev/null; then
+    return 0
+  fi
+  caffeinate -dims &
+  print $! > "$SCK_DIR/caffeinate.pid"
+  print 'Display sleep held off for streaming.'
+}
+
+release_awake() {
+  if [[ -f "$SCK_DIR/caffeinate.pid" ]]; then
+    kill "$(cat "$SCK_DIR/caffeinate.pid")" 2>/dev/null || true
+    rm -f "$SCK_DIR/caffeinate.pid"
+  fi
+  pkill -f 'caffeinate -dims' 2>/dev/null || true
+}
+
 start_steam() {
   if (( ${#$(find_pids steam)} )); then
     print 'Steam is already running for this bottle.'
     return 0
   fi
+  hold_awake
   start_capture_helper || true
   : > "$STEAM_LOG"
   cd "$STEAM_DIR"
@@ -298,5 +317,5 @@ case "$1 $2" in
   'stop steam') stop_scope steam ;;
   'stop game') stop_scope game ;;
   'start all') start_steam && wait_for_steam && start_game ;;
-  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
+  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; release_awake; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
 esac
