@@ -1,5 +1,5 @@
 diff --git a/dlls/winecoreaudio.drv/coreaudio.c b/dlls/winecoreaudio.drv/coreaudio.c
-index 0ec10fe..cbd0d88 100644
+index 0ec10fe..df2a860 100644
 --- a/dlls/winecoreaudio.drv/coreaudio.c
 +++ b/dlls/winecoreaudio.drv/coreaudio.c
 @@ -36,6 +36,7 @@
@@ -27,7 +27,7 @@ index 0ec10fe..cbd0d88 100644
  };
  
  static ULONG_PTR zero_bits = 0;
-@@ -414,6 +425,306 @@ static void ca_wrap_buffer(BYTE *dst, UINT32 dst_offs, UINT32 dst_bytes,
+@@ -414,6 +425,308 @@ static void ca_wrap_buffer(BYTE *dst, UINT32 dst_offs, UINT32 dst_bytes,
          memcpy(dst + dst_offs, src, src_bytes);
  }
  
@@ -106,6 +106,8 @@ index 0ec10fe..cbd0d88 100644
 + * like the converter path does. */
 +static void loopback_commit(struct coreaudio_stream *stream, UINT32 frames)
 +{
++    if (frames > 960)
++        WARN("loopback large commit %u frames (held %u)\n", frames, stream->held_frames);
 +    stream->wri_offs_frames = (UINT32)((stream->wri_offs_frames + frames) % stream->bufsize_frames);
 +    if ((UINT64)stream->held_frames + frames > stream->bufsize_frames) {
 +        stream->lcl_offs_frames = (UINT32)((stream->lcl_offs_frames + (stream->held_frames + frames - stream->bufsize_frames)) % stream->bufsize_frames);
@@ -196,8 +198,9 @@ index 0ec10fe..cbd0d88 100644
 +
 +    /* Realtime budget shared by data and silence. The timer tick is the
 +     * primary feeder (hardware-callback equivalent); consumer polls only
-+     * perform emergency recovery from an empty buffer so positions
-+     * advance exactly like hardware: small frequent uniform steps. */
++     * perform emergency recovery from an empty buffer. Deliberately no
++     * top-up cushion: feeding above realtime overfills the buffer under
++     * gulpy drain patterns and reads back as position overruns. */
 +    clock_gettime(CLOCK_MONOTONIC, &pt);
 +    pnow = (UINT64)pt.tv_sec * 1000000000ULL + pt.tv_nsec;
 +    elapsed = pnow > stream->loopback_last_ns ? pnow - stream->loopback_last_ns : 0;
@@ -208,7 +211,6 @@ index 0ec10fe..cbd0d88 100644
 +    now_ns = (UINT64)now.tv_sec * 1000000000ULL + now.tv_nsec;
 +    if (timer) {
 +        allow = due;
-+        if (stream->held_frames < 240) allow += 240 - stream->held_frames;
 +    } else {
 +        allow = stream->held_frames == 0 ? stream->period_frames : 0;
 +    }
@@ -334,7 +336,7 @@ index 0ec10fe..cbd0d88 100644
  /* we need to trigger CA to pull data from the device and give it to us
   *
   * raw data from CA is stored in cap_buffer, possibly via wrap_buffer
-@@ -809,6 +1120,46 @@ static NTSTATUS unix_create_stream(void *args)
+@@ -809,6 +1122,46 @@ static NTSTATUS unix_create_stream(void *args)
      }
  
      stream->period_frames = muldiv(params->period, stream->fmt->nSamplesPerSec, 10000000);
@@ -381,7 +383,7 @@ index 0ec10fe..cbd0d88 100644
      if (stream->period_frames == 0)
      {
          params->result = E_INVALIDARG;
-@@ -923,6 +1274,8 @@ static NTSTATUS unix_release_stream( void *args )
+@@ -923,6 +1276,8 @@ static NTSTATUS unix_release_stream( void *args )
      free(stream->resamp_buffer);
      free(stream->wrap_buffer);
      free(stream->cap_buffer);
@@ -390,7 +392,7 @@ index 0ec10fe..cbd0d88 100644
      if(stream->local_buffer){
          size = 0;
          NtFreeVirtualMemory(GetCurrentProcess(), (void **)&stream->local_buffer,
-@@ -1092,7 +1445,15 @@ static NTSTATUS unix_get_mix_format(void *args)
+@@ -1092,7 +1447,15 @@ static NTSTATUS unix_get_mix_format(void *args)
      UInt32 size;
      OSStatus sc;
      int i;
@@ -407,7 +409,7 @@ index 0ec10fe..cbd0d88 100644
  
      params->fmt->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
  
-@@ -1184,7 +1545,14 @@ static NTSTATUS unix_is_format_supported(void *args)
+@@ -1184,7 +1547,14 @@ static NTSTATUS unix_is_format_supported(void *args)
      AudioStreamBasicDescription dev_desc;
      AudioConverterRef converter;
      AudioComponentInstance unit;
@@ -423,7 +425,7 @@ index 0ec10fe..cbd0d88 100644
  
      unit = get_audiounit(params->flow, dev_id);
  
-@@ -1202,6 +1570,13 @@ static NTSTATUS unix_get_device_period(void *args)
+@@ -1202,6 +1572,13 @@ static NTSTATUS unix_get_device_period(void *args)
      unsigned int n_samples_per_sec;
      AudioDeviceID dev_id;
  
@@ -437,7 +439,7 @@ index 0ec10fe..cbd0d88 100644
      dev_id = dev_id_from_device(params->device);
      if (FAILED(params->result = get_device_sample_rate(dev_id, params->flow, &n_samples_per_sec)))
          return STATUS_SUCCESS;
-@@ -1290,6 +1665,12 @@ static void capture_resample(struct coreaudio_stream *stream)
+@@ -1290,6 +1667,12 @@ static void capture_resample(struct coreaudio_stream *stream)
                                           stream->fmt->nSamplesPerSec);
      OSStatus sc;
  
@@ -450,7 +452,7 @@ index 0ec10fe..cbd0d88 100644
      /* the resampling process often needs more source frames than we'd
       * guess from a straight conversion using the sample rate ratio. so
       * only convert if we have extra source data. */
-@@ -1406,6 +1787,13 @@ static NTSTATUS unix_get_latency(void *args)
+@@ -1406,6 +1789,13 @@ static NTSTATUS unix_get_latency(void *args)
  
      os_unfair_lock_lock(&stream->lock);
  
@@ -464,7 +466,7 @@ index 0ec10fe..cbd0d88 100644
      addr.mScope = get_scope(stream->flow);
      addr.mSelector = kAudioDevicePropertyLatency;
      addr.mElement = 0;
-@@ -1464,6 +1852,14 @@ static void unix_timer_loop(void *args)
+@@ -1464,6 +1854,14 @@ static void unix_timer_loop(void *args)
      next.QuadPart = last.QuadPart + stream->period;
  
      while(!stream->please_quit){
@@ -479,7 +481,7 @@ index 0ec10fe..cbd0d88 100644
          NtSetEvent(stream->event, NULL);
          NtDelayExecution(FALSE, &delay);
          NtQueryPerformanceCounter(&last, NULL);
-@@ -1695,9 +2091,16 @@ static NTSTATUS unix_get_capture_buffer(void *args)
+@@ -1695,9 +2093,16 @@ static NTSTATUS unix_get_capture_buffer(void *args)
  
      if(params->devpos)
          *params->devpos = stream->written_frames;
@@ -499,7 +501,7 @@ index 0ec10fe..cbd0d88 100644
      }
      params->result = S_OK;
  
-@@ -1955,7 +2358,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
+@@ -1955,7 +2360,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
      unix_get_capture_buffer,
      unix_release_capture_buffer,
      unix_is_format_supported,
@@ -508,7 +510,7 @@ index 0ec10fe..cbd0d88 100644
      unix_get_mix_format,
      unix_get_device_period,
      unix_get_buffer_size,
-@@ -2141,6 +2544,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
+@@ -2141,6 +2546,31 @@ static NTSTATUS unix_wow64_is_format_supported(void *args)
      return STATUS_SUCCESS;
  }
  
@@ -540,7 +542,7 @@ index 0ec10fe..cbd0d88 100644
  static NTSTATUS unix_wow64_get_mix_format(void *args)
  {
      struct
-@@ -2405,7 +2833,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
+@@ -2405,7 +2835,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
      unix_wow64_get_capture_buffer,
      unix_release_capture_buffer,
      unix_wow64_is_format_supported,
