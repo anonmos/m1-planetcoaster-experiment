@@ -16,6 +16,13 @@ OUT=/private/tmp/steam-rp-capture-probe-$(date +%Y%m%d-%H%M%S)
 [[ -n "$CAPTURE_OUTPUT_DIR" ]] && OUT=$CAPTURE_OUTPUT_DIR
 "$CC" -O2 -Wall -Wextra -o "$EXE" "$ROOT/tools/steam-capture-probe/steam_capture_probe.c" -lgdi32 -luser32 || exit 1
 mkdir -p "$OUT"
+
+# Headless guard (2026-11-07): the probe covers the host display and drives a
+# Wine GUI process. Local Terminal only.
+if [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}" ]]; then
+  print -u2 "Refusing to run the capture probe over SSH: it needs the WindowServer (nodrv respawn storm, 2026-11-07)."
+  exit 1
+fi
 print "Built $EXE"
 print "The test pattern will briefly cover the host display while frames are captured."
 print "Output: $OUT"

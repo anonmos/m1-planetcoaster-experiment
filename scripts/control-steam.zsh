@@ -34,6 +34,30 @@ HELPER_BIN="$HELPER_APP/Contents/MacOS/WineCaptureProbe"
 SCK_DIR="/private/tmp/wine-sck-probe"
 SCK_LIVE_LOG="/private/tmp/wine-sck-live.log"
 
+# ---- headless guard (added 2026-11-07 after two fork storms) -----------------
+# SSH shells have no WindowServer access: any Wine GUI process started here
+# gets nodrv, and Wine's service manager respawns explorer in a tight loop.
+# Rosetta forks pile up faster than the kernel reaps them -> PID exhaustion
+# ("fork: Resource temporarily unavailable", load 300+, machine wedged).
+# START paths are therefore refused over SSH. STOP paths stay allowed -
+# they only remove processes, which makes them the remote kill switch.
+# Headless-safe: stop steam/game/all, kill-wine-storm.zsh, TLS probe, builds.
+# Local-Terminal-only: start steam/game/all, create-bottle-fresh,
+# run-steam-capture-probe, winecfg, SteamSetup.exe.
+is_headless_ssh() {
+  [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}" ]]
+}
+require_gui_session() {  # $1 = what is being refused
+  if is_headless_ssh; then
+    print -u2 "Refusing to $1 over SSH: no WindowServer access here, Wine GUI processes wedge the machine (nodrv respawn storm, 2026-11-07)."
+    print -u2 "Run it from the Mac's local Terminal instead."
+    print -u2 "Over SSH only stop/kill actions are allowed, e.g.:"
+    print -u2 "  zsh scripts/control-steam.zsh stop all"
+    print -u2 "  zsh scripts/kill-wine-storm.zsh   # escape hatch: SIGKILL in dependency order"
+    return 1
+  fi
+}
+
 usage() {
   print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er|cr]'
   print ''
@@ -264,6 +288,7 @@ release_awake() {
 }
 
 start_steam() {
+  require_gui_session 'start Steam' || return 1
   if (( ${#$(find_pids steam)} )); then
     print 'Steam is already running for this bottle.'
     return 0
@@ -294,6 +319,7 @@ wait_for_steam() {
 }
 
 start_game() {
+  require_gui_session "start $GAME_LABEL" || return 1
   if [[ ! -f "$GAME" ]]; then
     print -u2 "$GAME_LABEL is not installed in this prefix (missing $GAME)."
     return 1

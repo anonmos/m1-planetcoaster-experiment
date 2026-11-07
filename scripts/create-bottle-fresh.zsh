@@ -27,6 +27,14 @@ STEAM_URL="${STEAM_SETUP_URL:-https://cdn.fastly.steamstatic.com/client/installe
 
 [[ -x "$WINE_EXEC" && -x "$WINE_SERVER" ]] || { print -u2 "WineForge runtime missing: $R (run build-wineforge-full.zsh first)"; exit 1 }
 [[ -d "$GPTK/lib" ]] || { print -u2 "GPTK extract missing: $GPTK"; exit 1 }
+
+# Headless guard (2026-11-07): wineboot/SteamSetup without WindowServer
+# triggers the nodrv explorer respawn storm. Local Terminal only.
+if [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}" ]]; then
+  print -u2 "Refusing to create a bottle over SSH: wineboot/SteamSetup need WindowServer (nodrv respawn storm, 2026-11-07)."
+  print -u2 "Run this from the Mac's local Terminal instead."
+  exit 1
+fi
 if [[ -e "$P" ]]; then
   print -u2 "Prefix path exists: $P (pass another path or move it aside)"
   exit 1
