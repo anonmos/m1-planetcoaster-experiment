@@ -123,7 +123,7 @@ cp -f "$GPTK/lib/external/libd3dshared.dylib" "$RUNTIME/lib/external/"
 mkdir -p "$RUNTIME/lib/external/wine/x86_64-windows" \
   "$RUNTIME/lib/external/wine/x86_64-unix" \
   "$RUNTIME/lib/external/wine/i386-windows"
-for m in dxgi d3d10 d3d10core d3d11 d3d12 nvapi64 nvngx nvngx-on-metalfx; do
+for m in dxgi d3d10 d3d10core d3d11 d3d12 d3d12core nvapi64 nvngx nvngx-on-metalfx; do
   [[ -f "$GPTK/lib/wine/x86_64-windows/$m.dll" ]] && cp -a "$GPTK/lib/wine/x86_64-windows/$m.dll" "$RUNTIME/lib/external/wine/x86_64-windows/"
   [[ -f "$GPTK/lib/wine/i386-windows/$m.dll" ]] && cp -a "$GPTK/lib/wine/i386-windows/$m.dll" "$RUNTIME/lib/external/wine/i386-windows/"
   # NOTE: GPTK's x86_64-unix/*.so are symlinks to ../../external/libd3dshared.dylib,
