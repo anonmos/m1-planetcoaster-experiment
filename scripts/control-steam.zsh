@@ -14,6 +14,8 @@ EXP33_LAUNCHER="$EXP33_DIR/Expedition33_Steam.exe"
 EXP33_GAME="$STEAM_DIR/steamapps/common/Expedition 33/Sandfall/Binaries/Win64/SandFall-Win64-Shipping.exe"
 ER_DIR="$STEAM_DIR/steamapps/common/ELDEN RING/Game"
 ER_GAME="$ER_DIR/eldenring.exe"
+CR_DIR="$STEAM_DIR/steamapps/common/CONTROL Resonant"
+CR_GAME="$CR_DIR/CONTROLResonant.exe"
 GPTK="${GPTK_WINE:-$ROOT/toolchain/gptk-extract/Game Porting Toolkit.app/Contents/Resources/wine}"
 # Per-prefix log/pid names so two bottles never share /private/tmp files.
 PFX_TAG="${P:t}"
@@ -21,33 +23,37 @@ STEAM_LOG="/private/tmp/planetcoaster2-controller-steam-$PFX_TAG.log"
 PC2_LOG="/private/tmp/planetcoaster2-controller-pc2-$PFX_TAG.log"
 EXP33_LOG="/private/tmp/planetcoaster2-controller-33-$PFX_TAG.log"
 ER_LOG="/private/tmp/planetcoaster2-controller-er-$PFX_TAG.log"
+CR_LOG="/private/tmp/planetcoaster2-controller-cr-$PFX_TAG.log"
 STEAM_PIDFILE="/private/tmp/planetcoaster2-controller-steam-$PFX_TAG.pid"
 PC2_PIDFILE="/private/tmp/planetcoaster2-controller-pc2-$PFX_TAG.pid"
 EXP33_PIDFILE="/private/tmp/planetcoaster2-controller-33-$PFX_TAG.pid"
 ER_PIDFILE="/private/tmp/planetcoaster2-controller-er-$PFX_TAG.pid"
+CR_PIDFILE="/private/tmp/planetcoaster2-controller-cr-$PFX_TAG.pid"
 HELPER_APP="$ROOT/build/WineCaptureProbe.app"
 HELPER_BIN="$HELPER_APP/Contents/MacOS/WineCaptureProbe"
 SCK_DIR="/private/tmp/wine-sck-probe"
 SCK_LIVE_LOG="/private/tmp/wine-sck-live.log"
 
 usage() {
-  print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er]'
+  print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er|cr]'
   print ''
   print 'Commands:'
   print '  start steam   Start Steam only'
   print '  start game pc2  Start Planet Coaster 2; Steam must already be running'
   print '  start game 33   Start Expedition 33; Steam must already be running'
   print '  start game er   Start Elden Ring (offline EAC bypass); Steam must already be running'
+  print '  start game cr   Start CONTROL Resonant; Steam must already be running'
   print '  stop steam    Stop Steam and its Wine-side helper processes'
   print '  stop game pc2   Stop Planet Coaster 2 only'
   print '  stop game 33    Stop Expedition 33 only'
   print '  stop game er    Stop Elden Ring only'
+  print '  stop game cr    Stop CONTROL Resonant only'
   print '  start all     Start Steam, wait for login, then start the game'
   print '  stop all      Stop the game, Steam, and their Wine-side helpers'
   exit 2
 }
 
-if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er ) || ( "$2" != game && $# -eq 3 ) ]]; then
+if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er && "$3" != cr ) || ( "$2" != game && $# -eq 3 ) ]]; then
   usage
 fi
 if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" ]]; then
@@ -74,6 +80,17 @@ elif [[ "$GAME_TARGET" == er ]]; then
   # directory: launching from $STEAM_DIR makes it look in
   # "C:\Program Files (x86)\Steam\Data0.bhd" and die in CSEblFileManager.
   GAME_DIR="$ER_DIR"
+elif [[ "$GAME_TARGET" == cr ]]; then
+  GAME="$CR_GAME"
+  APPID='3669870'
+  GAME_LABEL='CONTROL Resonant'
+  GAME_LOG="$CR_LOG"
+  GAME_PIDFILE="$CR_PIDFILE"
+  GAME_EXE='CONTROLResonant.exe'
+  # Remedy Northlight resolves content relative to the game dir; launching
+  # from $STEAM_DIR leaves the game windowless (same class of failure as
+  # Elden Ring's Data*.bhd working-dir requirement).
+  GAME_DIR="$CR_DIR"
 else
   GAME="$EXP33_GAME"
   APPID='1903340'
@@ -149,7 +166,7 @@ find_pids() {
     elif [[ "$scope" == steam ]]; then
       [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter')* ]] && print "$pid"
     else
-      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'eldenring.exe'|'start_protected_game.exe'|'conhost.exe'|'winedevice.exe'|'services.exe'|'plugplay.exe'|'svchost.exe'|'explorer.exe'|'rpcss.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
+      [[ "$args" == *('steam.exe'|'steamwebhelper'|'steamservice'|'steamerrorreporter'|'PlanetCoaster2.exe'|'eldenring.exe'|'CONTROLResonant.exe'|'start_protected_game.exe'|'conhost.exe'|'winedevice.exe'|'services.exe'|'plugplay.exe'|'svchost.exe'|'explorer.exe'|'rpcss.exe'|'winedbg'|'wineserver'|'wine-preloader'|'wine64-preloader')* ]] && print "$pid"
     fi
   done
 }
@@ -303,6 +320,9 @@ start_game() {
   elif [[ "$GAME_TARGET" == er ]]; then
     print 'Launching eldenring.exe directly (EAC bypass, offline only) with Steam API environment...'
     print 'EasyAntiCheat via start_protected_game.exe does not load under Wine; online play is unavailable.'
+    ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME" >>"$GAME_LOG" 2>&1 ) &
+  elif [[ "$GAME_TARGET" == cr ]]; then
+    print 'Launching CONTROLResonant.exe directly with Steam API environment (Steam must be running for the license check)...'
     ( STEAM_APP_ID="$APPID" STEAM_CLIENT_LAUNCH=0 run_wine "$GAME" >>"$GAME_LOG" 2>&1 ) &
   else
     ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -applaunch "$APPID" -dx12 -windowed -screen-width 1280 -screen-height 720 >>"$GAME_LOG" 2>&1 ) &
