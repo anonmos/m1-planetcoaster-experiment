@@ -25,10 +25,8 @@ int main(void) {
     wc.hCursor = LoadCursorA(NULL, (LPCSTR)32512);
     if (!RegisterClassExA(&wc)) { printf("PRESENT: RegisterClassEx FAILED err=%lu\n", (unsigned long)GetLastError()); return 1; }
 
-    printf("PRESENT: creating window 800x600\n");
-    HWND hwnd = CreateWindowExA(0, CLASS_NAME, "D3D11 Present Test",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 800, 600,
-        NULL, NULL, wc.hInstance, NULL);
+    printf("PRESENT: creating window 1728x1117 popup (game-like)\n");
+    HWND hwnd = CreateWindowExA(WS_EX_APPWINDOW, CLASS_NAME, "CONTROL Resonant", WS_POPUP | WS_VISIBLE, 0, 33, 1728, 1117, NULL, NULL, wc.hInstance, NULL);
     if (!hwnd) { printf("PRESENT: CreateWindowEx FAILED err=%lu\n", (unsigned long)GetLastError()); return 1; }
     printf("PRESENT: window hwnd=%p\n", (void *)hwnd);
 
@@ -63,8 +61,8 @@ int main(void) {
 
     DXGI_SWAP_CHAIN_DESC scd = {0};
     scd.BufferCount = 2;
-    scd.BufferDesc.Width = 800;
-    scd.BufferDesc.Height = 600;
+    scd.BufferDesc.Width = 1728;
+    scd.BufferDesc.Height = 1117;
     scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     scd.OutputWindow = hwnd;
