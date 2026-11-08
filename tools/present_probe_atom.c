@@ -1,0 +1,112 @@
+#define INITGUID
+#define COBJMACROS
+#define WIN32_LEAN_AND_MEAN
+#include <stdio.h>
+#include <windows.h>
+#include <dxgi.h>
+#include <d3d11.h>
+
+
+static const char *CLASS_NAME = "PresentProbeAtom";
+
+static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_DESTROY) { PostQuitMessage(0); return 0; }
+    return DefWindowProcA(h, m, w, l);
+}
+
+int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);
+    printf("PRESENT-ATOM: registering window class\n");
+    WNDCLASSEXA wc = {0};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = wndproc;
+    wc.hInstance = GetModuleHandleA(NULL);
+    wc.lpszClassName = CLASS_NAME;
+    wc.hCursor = LoadCursorA(NULL, (LPCSTR)32512);
+    ATOM atom = RegisterClassExA(&wc);
+    if (!atom) { printf("PRESENT-ATOM: RegisterClassEx FAILED err=%lu\n", (unsigned long)GetLastError()); return 1; }
+    printf("PRESENT-ATOM: registered atom=0x%x\n", (unsigned)atom);
+
+    printf("PRESENT-ATOM: creating window 1728x1117 popup via ATOM (game-like)\n");
+    HWND hwnd = CreateWindowExA(WS_EX_APPWINDOW, (LPCSTR)(UINT_PTR)atom, "CONTROL Resonant", WS_POPUP | WS_VISIBLE, 0, 33, 1728, 1117, NULL, NULL, wc.hInstance, NULL);
+    if (!hwnd) { printf("PRESENT-ATOM: CreateWindowEx FAILED err=%lu\n", (unsigned long)GetLastError()); return 1; }
+    printf("PRESENT-ATOM: window hwnd=%p\n", (void *)hwnd);
+
+    printf("PRESENT-ATOM: preloading Agility d3d12core like the game does\n");
+    {
+        HMODULE ag = LoadLibraryA("C:\\Program Files (x86)\\Steam\\steamapps\\common\\CONTROL Resonant\\d3d12core.dll");
+        printf("PRESENT-ATOM: LoadLibrary d3d12core.dll => %p err=%lu\n", (void *)ag, (unsigned long)GetLastError());
+    }
+    printf("PRESENT-ATOM: CreateDXGIFactory1\n");
+    IDXGIFactory1 *factory = NULL;
+    HRESULT hr = CreateDXGIFactory1(&IID_IDXGIFactory1, (void **)&factory);
+    printf("PRESENT-ATOM: factory hr=0x%08lx factory=%p\n", (long)hr, (void *)factory);
+    if (FAILED(hr)) return 1;
+
+    printf("PRESENT-ATOM: D3D11CreateDevice (default adapter, FL 11_0)\n");
+    ID3D11Device *dev = NULL;
+    ID3D11DeviceContext *ctx = NULL;
+    D3D_FEATURE_LEVEL obtained = 0;
+    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0,
+        D3D11_SDK_VERSION, &dev, &obtained, &ctx);
+    printf("PRESENT-ATOM: device hr=0x%08lx dev=%p fl=0x%x\n", (long)hr, (void *)dev, (unsigned)obtained);
+    if (FAILED(hr) || !dev) return 1;
+
+    printf("PRESENT-ATOM: creating swapchain for hwnd\n");
+    IDXGIDevice *dxgiDev = NULL;
+    hr = ID3D11Device_QueryInterface(dev, &IID_IDXGIDevice, (void **)&dxgiDev);
+    printf("PRESENT-ATOM: QI IDXGIDevice hr=0x%08lx\n", (long)hr);
+    if (FAILED(hr)) return 1;
+    IDXGIAdapter *adapter = NULL;
+    hr = IDXGIDevice_GetAdapter(dxgiDev, &adapter);
+    printf("PRESENT-ATOM: GetAdapter hr=0x%08lx\n", (long)hr);
+    if (FAILED(hr)) return 1;
+    IDXGIFactory *dxgiFactory = NULL;
+    hr = IDXGIAdapter_GetParent(adapter, &IID_IDXGIFactory1, (void **)&dxgiFactory);
+    printf("PRESENT-ATOM: GetParent(factory) hr=0x%08lx\n", (long)hr);
+    if (FAILED(hr)) return 1;
+
+    DXGI_SWAP_CHAIN_DESC scd = {0};
+    scd.BufferCount = 2;
+    scd.BufferDesc.Width = 1728;
+    scd.BufferDesc.Height = 1117;
+    scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    scd.OutputWindow = hwnd;
+    scd.SampleDesc.Count = 1;
+    scd.Windowed = TRUE;
+    scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    IDXGISwapChain *sc = NULL;
+    hr = IDXGIFactory_CreateSwapChain(dxgiFactory, (IUnknown *)dev, &scd, &sc);
+    printf("PRESENT-ATOM: CreateSwapChain hr=0x%08lx sc=%p\n", (long)hr, (void *)sc);
+    if (FAILED(hr) || !sc) return 1;
+
+    printf("PRESENT-ATOM: getting backbuffer + RTV\n");
+    ID3D11Texture2D *bb = NULL;
+    hr = IDXGISwapChain_GetBuffer(sc, 0, &IID_ID3D11Texture2D, (void **)&bb);
+    printf("PRESENT-ATOM: GetBuffer hr=0x%08lx\n", (long)hr);
+    if (FAILED(hr)) return 1;
+    ID3D11RenderTargetView *rtv = NULL;
+    hr = ID3D11Device_CreateRenderTargetView(dev, (ID3D11Resource *)bb, NULL, &rtv);
+    printf("PRESENT-ATOM: CreateRTV hr=0x%08lx\n", (long)hr);
+    if (FAILED(hr)) return 1;
+
+    printf("PRESENT-ATOM: entering 600-frame present loop (watch the window cycle colors)\n");
+    for (int i = 0; i < 600; i++) {
+        MSG msg;
+        while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) { printf("PRESENT-ATOM: quit requested\n"); goto done; }
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+        }
+        float t = (float)(i % 300) / 300.0f;
+        float clear[4] = {t, 0.2f, 1.0f - t, 1.0f};
+        ID3D11DeviceContext_ClearRenderTargetView(ctx, rtv, clear);
+        hr = IDXGISwapChain_Present(sc, 1, 0);
+        if (FAILED(hr)) { printf("PRESENT-ATOM: Present FAILED at frame %d hr=0x%08lx\n", i, (long)hr); return 1; }
+        if ((i % 60) == 0) printf("PRESENT-ATOM: frame %d ok\n", i);
+    }
+done:
+    printf("PRESENT-ATOM: SUCCESS - presented 600 frames\n");
+    return 0;
+}
