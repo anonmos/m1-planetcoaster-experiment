@@ -40,7 +40,11 @@ static volatile LONG g_hangReported = 0;
 static DWORD WINAPI WatchdogThread(LPVOID p) {
     (void)p;
     /* Main parks immediately after posting now; no gate needed. Pure reporter. */
+#ifdef LONG_WATCH
+    DWORD wr = WaitForSingleObject(g_doneEvent, 90000);
+#else
     DWORD wr = WaitForSingleObject(g_doneEvent, 20000);
+#endif
     if (wr != WAIT_OBJECT_0 && !g_hwnd) {
         g_hangReported = 1;
         printf("REPRO: HANG REPRODUCED - CreateWindowExW never returned (err so far=%lu)\n",
