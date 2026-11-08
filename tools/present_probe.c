@@ -30,6 +30,11 @@ int main(void) {
     if (!hwnd) { printf("PRESENT: CreateWindowEx FAILED err=%lu\n", (unsigned long)GetLastError()); return 1; }
     printf("PRESENT: window hwnd=%p\n", (void *)hwnd);
 
+    printf("PRESENT: preloading Agility d3d12core like the game does\n");
+    {
+        HMODULE ag = LoadLibraryA("C:\\Program Files (x86)\\Steam\\steamapps\\common\\CONTROL Resonant\\d3d12core.dll");
+        printf("PRESENT: LoadLibrary d3d12core.dll => %p err=%lu\n", (void *)ag, (unsigned long)GetLastError());
+    }
     printf("PRESENT: CreateDXGIFactory1\n");
     IDXGIFactory1 *factory = NULL;
     HRESULT hr = CreateDXGIFactory1(&IID_IDXGIFactory1, (void **)&factory);
