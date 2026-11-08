@@ -17,6 +17,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <stdio.h>
 #include <windows.h>
+#include <objbase.h>
 
 static const wchar_t *CLASS_NAME = L"AppWindowClass";
 static const wchar_t *WIN_TITLE  = L"CONTROL Resonant";
@@ -100,6 +101,12 @@ static DWORD WINAPI WorkerThread(LPVOID p) {
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("REPRO: main thread id=%lu\n", (unsigned long)GetCurrentThreadId());
+#ifdef COM_MAIN
+    {
+        HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+        printf("REPRO: CoInitializeEx(APARTMENT) hr=0x%08lx\n", (long)hr);
+    }
+#endif
 
     g_workerReady = CreateEventW(NULL, FALSE, FALSE, NULL);
     g_goEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
@@ -121,6 +128,19 @@ int main(void) {
     {
         HMODULE st = LoadLibraryW(L"C:\\Program Files (x86)\\Steam\\steamapps\\common\\CONTROL Resonant\\steam_api64.dll");
         printf("REPRO: preload steam_api64.dll => %p err=%lu\n", (void *)st, (unsigned long)GetLastError());
+#ifdef STEAM_INIT
+        if (st) {
+            int (WINAPI *pInit)(void) = (void *)GetProcAddress(st, "SteamInternal_SteamAPI_Init");
+            void (WINAPI *pRun)(void) = (void *)GetProcAddress(st, "SteamAPI_RunCallbacks");
+            printf("REPRO: SteamInternal_SteamAPI_Init ptr=%p RunCallbacks ptr=%p\n",
+                (void *)pInit, (void *)pRun);
+            if (pInit) {
+                int r = pInit();
+                printf("REPRO: SteamInternal_SteamAPI_Init => %d (0=OK)\n", r);
+            }
+            if (pRun) { for (int i = 0; i < 5; i++) { pRun(); Sleep(100); } printf("REPRO: ran callbacks\n"); }
+        }
+#endif
     }
 #endif
 
