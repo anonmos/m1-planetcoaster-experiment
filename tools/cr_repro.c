@@ -39,9 +39,8 @@ static volatile LONG g_hangReported = 0;
  * Sleep 3s (main parks meanwhile), then open the gate. At 20s, declare hang. */
 static DWORD WINAPI WatchdogThread(LPVOID p) {
     (void)p;
-    Sleep(3000);
-    SetEvent(g_goEvent);
-    DWORD wr = WaitForSingleObject(g_doneEvent, 17000);
+    /* Main parks immediately after posting now; no gate needed. Pure reporter. */
+    DWORD wr = WaitForSingleObject(g_doneEvent, 20000);
     if (wr != WAIT_OBJECT_0 && !g_hwnd) {
         g_hangReported = 1;
         printf("REPRO: HANG REPRODUCED - CreateWindowExW never returned (err so far=%lu)\n",
@@ -67,9 +66,20 @@ static DWORD WINAPI ParkerThread(LPVOID p) {
 static DWORD WINAPI WorkerThread(LPVOID p) {
     MSG msg;
     (void)p;
-    PeekMessageW(&msg, NULL, 0, 0, PM_NOREMOVE);
+    /* Game thread B blocks in GetMessageW (relay :8399540 Ret=1: it retrieves
+     * the posted WM_APP), does an SRW pulse, then creates the window. */
+    /* Queue does not exist until first GetMessage/Peek: realize it, signal
+     * ready, then block retrieving like game thread B. */
+    MSG pq;
+    PeekMessageW(&pq, NULL, 0, 0, PM_NOREMOVE); /* realize queue deterministically */
     SetEvent(g_workerReady);
-    WaitForSingleObject(g_goEvent, INFINITE);
+    if (GetMessageW(&msg, NULL, 0, 0) <= 0) {
+        printf("REPRO: worker GetMessage quit/err\n");
+        SetEvent(g_doneEvent);
+        return 1;
+    }
+    AcquireSRWLockExclusive(&g_lock);
+    ReleaseSRWLockExclusive(&g_lock);
     /* NOTE: a WM_APP posted by main is pending in this queue, exactly like
      * the game: PostThreadMessageA(B, WM_APP) precedes CreateWindowExW. */
     HINSTANCE inst = GetModuleHandleW(NULL);
@@ -150,8 +160,11 @@ int main(void) {
         HANDLE h = CreateThread(NULL, 0, ParkerThread, NULL, 0, NULL);
         if (h) CloseHandle(h);
     }
-    HANDLE wh = CreateThread(NULL, 0, WorkerThread, NULL, 0, &g_workerTid);
+    /* Game spawns B SUSPENDED (relay CreateThread flag 0x4), resumes later. */
+    HANDLE wh = CreateThread(NULL, 0, WorkerThread, NULL, CREATE_SUSPENDED, &g_workerTid);
     if (!wh) { printf("REPRO: worker spawn FAILED\n"); return 1; }
+    DWORD rprev = ResumeThread(wh);
+    printf("REPRO: resumed worker (prev=%lu)\n", (unsigned long)rprev);
     WaitForSingleObject(g_workerReady, INFINITE);
     printf("REPRO: %d parker threads + worker tid=%lu parked (game: job system up first)\n",
         N_PARKERS, (unsigned long)g_workerTid);
