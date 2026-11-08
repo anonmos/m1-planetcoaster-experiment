@@ -168,7 +168,7 @@ run_wine() {
     SteamAppId="$steam_app_id" SteamGameId="$steam_app_id" SteamOverlayGameId="$steam_app_id" \
     SteamClientLaunch="$steam_client_launch" SteamPath="$STEAM_DIR" \
     STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_DIR" \
-    WINEDLLOVERRIDES='dxgi,d3d10,d3d10core,d3d11,d3d12=b;nvapi,nvapi64,nvngx,nvngx-on-metalfx=b;gameoverlayrenderer,gameoverlayrenderer64,winebth=d' \
+    WINEDLLOVERRIDES="${WINEDLLOVERRIDES_OVERRIDE:-dxgi,d3d10,d3d10core,d3d11,d3d12=b;nvapi,nvapi64,nvngx,nvngx-on-metalfx=b;gameoverlayrenderer,gameoverlayrenderer64,winebth=d}" \
     WINEDEBUG="${WINE_DEBUG_MODE:-+loaddll,+err}" \
     "$WINE_EXEC" "$@"
 }
