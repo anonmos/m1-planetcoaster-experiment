@@ -298,7 +298,9 @@ start_steam() {
   : > "$STEAM_LOG"
   cd "$STEAM_DIR"
   print 'Starting Steam...'
-  ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -tcp -no-cef-sandbox  >>"$STEAM_LOG" 2>&1 ) &
+  # STEAM_EXTRA_ARGS: one-shot flags, e.g. STEAM_EXTRA_ARGS="-clearbeta"
+  #   zsh scripts/control-steam.zsh start steam   (to leave the public beta)
+  ( STEAM_APP_ID=0 STEAM_CLIENT_LAUNCH=0 run_wine "$STEAM" -tcp -no-cef-sandbox ${STEAM_EXTRA_ARGS:-} >>"$STEAM_LOG" 2>&1 ) &
   print $! > "$STEAM_PIDFILE"
   print "Steam started. Log: $STEAM_LOG"
 }
