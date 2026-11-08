@@ -1,3 +1,4 @@
+#define INITGUID
 #define COBJMACROS
 #define WIN32_LEAN_AND_MEAN
 #include <stdio.h>
@@ -5,15 +6,7 @@
 #include <dxgi.h>
 #include <d3d11.h>
 
-static const GUID MY_IID_IDXGIFactory1 = {
-    0x770aae78, 0xf26f, 0x4dba, {0xa8, 0x29, 0x25, 0x3b, 0x9e, 0xb8, 0x92, 0x92}};
-static const GUID MY_IID_ID3D11Device = {
-    0xdb6f6ddb, 0xac77, 0x4e88, {0x82, 0x53, 0x81, 0x9d, 0xf2, 0xbc, 0xd1, 0x38}};
 
-static const GUID MY_IID_IDXGIDevice =
-    {0x54ec77b1, 0xe9b9, 0x4a68, {0xaa, 0x46, 0xcd, 0x4d, 0xe8, 0xb0, 0xd9, 0x92}};
-static const GUID MY_IID_ID3D11Texture2D =
-    {0x6f15aaf2, 0xd208, 0x4e89, {0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c}};
 static const char *CLASS_NAME = "PresentProbe";
 
 static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM w, LPARAM l) {
@@ -41,7 +34,7 @@ int main(void) {
 
     printf("PRESENT: CreateDXGIFactory1\n");
     IDXGIFactory1 *factory = NULL;
-    HRESULT hr = CreateDXGIFactory1(&MY_IID_IDXGIFactory1, (void **)&factory);
+    HRESULT hr = CreateDXGIFactory1(&IID_IDXGIFactory1, (void **)&factory);
     printf("PRESENT: factory hr=0x%08lx factory=%p\n", (long)hr, (void *)factory);
     if (FAILED(hr)) return 1;
 
@@ -56,7 +49,7 @@ int main(void) {
 
     printf("PRESENT: creating swapchain for hwnd\n");
     IDXGIDevice *dxgiDev = NULL;
-    hr = ID3D11Device_QueryInterface(dev, &MY_IID_IDXGIDevice, (void **)&dxgiDev);
+    hr = ID3D11Device_QueryInterface(dev, &IID_IDXGIDevice, (void **)&dxgiDev);
     printf("PRESENT: QI IDXGIDevice hr=0x%08lx\n", (long)hr);
     if (FAILED(hr)) return 1;
     IDXGIAdapter *adapter = NULL;
@@ -64,7 +57,7 @@ int main(void) {
     printf("PRESENT: GetAdapter hr=0x%08lx\n", (long)hr);
     if (FAILED(hr)) return 1;
     IDXGIFactory *dxgiFactory = NULL;
-    hr = IDXGIAdapter_GetParent(adapter, &MY_IID_IDXGIFactory1, (void **)&dxgiFactory);
+    hr = IDXGIAdapter_GetParent(adapter, &IID_IDXGIFactory1, (void **)&dxgiFactory);
     printf("PRESENT: GetParent(factory) hr=0x%08lx\n", (long)hr);
     if (FAILED(hr)) return 1;
 
@@ -85,7 +78,7 @@ int main(void) {
 
     printf("PRESENT: getting backbuffer + RTV\n");
     ID3D11Texture2D *bb = NULL;
-    hr = IDXGISwapChain_GetBuffer(sc, 0, &MY_IID_ID3D11Texture2D, (void **)&bb);
+    hr = IDXGISwapChain_GetBuffer(sc, 0, &IID_ID3D11Texture2D, (void **)&bb);
     printf("PRESENT: GetBuffer hr=0x%08lx\n", (long)hr);
     if (FAILED(hr)) return 1;
     ID3D11RenderTargetView *rtv = NULL;
