@@ -83,7 +83,7 @@ if [[ ! -f "$BUILD/Makefile" ]]; then
     FONTCONFIG_LIBS="-L$GSTLINK -lfontconfig" \
     FREETYPE_CFLAGS="-I$GPTK/include/freetype2" FREETYPE_LIBS="-L$GPTK/lib -lfreetype" \
     "$SRC/configure" --build=x86_64-apple-darwin --enable-archs=i386,x86_64 --prefix="$RUNTIME" \
-      --disable-tests --disable-winedbg --without-alsa --with-coreaudio --without-cups --without-dbus \
+      --disable-tests --without-alsa --with-coreaudio --without-cups --without-dbus \
       --without-ffmpeg --with-fontconfig --without-gettext --without-gssapi --with-gnutls \
       --without-gstreamer --without-inotify --without-krb5 --with-mingw --without-opengl \
       --without-oss --without-pulse --without-sdl --without-udev --without-usb --without-vulkan \
