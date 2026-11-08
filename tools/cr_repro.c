@@ -50,7 +50,9 @@ static DWORD WINAPI WatchdogThread(LPVOID p) {
         printf("REPRO: HANG REPRODUCED - CreateWindowExW never returned (err so far=%lu)\n",
             (unsigned long)g_createErr);
         fflush(stdout);
+#ifdef HANG_EXIT
         TerminateProcess(GetCurrentProcess(), 2);
+#endif
     }
     return 0;
 }
