@@ -279,6 +279,24 @@ hold_awake() {
   print 'Display sleep held off for streaming.'
 }
 
+release_awake_if_idle() {
+  # any target: the hold must survive while Steam or any game streams.
+  # stop_scope already waited; re-poll briefly so just-signalled processes
+  # are actually gone before deciding.
+  local alive=0 tries=0
+  while (( tries < 5 )); do
+    alive=0
+    (( ${#$(find_pids steam)} )) && alive=1
+    for exe in PlanetCoaster2.exe eldenring.exe CONTROLResonant.exe SandFall-Win64-Shipping.exe Expedition33_Steam.exe; do
+      ps -axo args= 2>/dev/null | grep -qiF $exe && { alive=1; break; }
+    done
+    (( alive )) || break
+    sleep 2
+    tries=$((tries+1))
+  done
+  (( alive )) || release_awake
+}
+
 release_awake() {
   if [[ -f "$SCK_DIR/caffeinate.pid" ]]; then
     kill "$(cat "$SCK_DIR/caffeinate.pid")" 2>/dev/null || true
@@ -362,8 +380,8 @@ start_game() {
 case "$1 $2" in
   'start steam') start_steam ;;
   'start game') start_game ;;
-  'stop steam') stop_scope steam ;;
-  'stop game') stop_scope game ;;
+  'stop steam') stop_scope steam; release_awake ;;
+  'stop game') stop_scope game; sleep 2; release_awake_if_idle ;;
   'start all') start_steam && wait_for_steam && start_game ;;
   'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; release_awake; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
 esac
