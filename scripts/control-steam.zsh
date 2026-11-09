@@ -59,7 +59,7 @@ require_gui_session() {  # $1 = what is being refused
 }
 
 usage() {
-  print 'Usage: control-steam.zsh <start|stop> <steam|game|all> [pc2|33|er|cr]'
+  print 'Usage: control-steam.zsh <start|stop> <steam|game|all|display> [pc2|33|er|cr]'
   print ''
   print 'Commands:'
   print '  start steam   Start Steam only'
@@ -74,10 +74,12 @@ usage() {
   print '  stop game cr    Stop CONTROL Resonant only'
   print '  start all     Start Steam, wait for login, then start the game'
   print '  stop all      Stop the game, Steam, and their Wine-side helpers'
+  print '  start display Hold display/system sleep off (caffeinate shortcut)'
+  print '  stop display  Release the display sleep hold'
   exit 2
 }
 
-if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er && "$3" != cr ) || ( "$2" != game && $# -eq 3 ) ]]; then
+if [[ $# -lt 2 || $# -gt 3 || ( "$1" != start && "$1" != stop ) || ( "$2" != steam && "$2" != game && "$2" != all && "$2" != display ) || ( $# -eq 3 && "$3" != pc2 && "$3" != 33 && "$3" != er && "$3" != cr ) || ( "$2" != game && $# -eq 3 ) ]]; then
   usage
 fi
 if [[ ! -x "$WINE_EXEC" || ! -x "$WINE_SERVER" || ! -f "$STEAM" ]]; then
@@ -384,4 +386,6 @@ case "$1 $2" in
   'stop game') stop_scope game; sleep 2; release_awake_if_idle ;;
   'start all') start_steam && wait_for_steam && start_game ;;
   'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; release_awake; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
+  'start display') hold_awake ;;
+  'stop display') release_awake; print 'Display sleep hold released.' ;;
 esac
