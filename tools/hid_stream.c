@@ -1,12 +1,18 @@
-// hid_stream.c — dump live input reports from the Xbox pad for 12s.
+// hid_stream.c — dump live input reports from the Xbox pad with timestamps.
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <IOKit/hid/IOHIDManager.h>
+
+static struct timespec t0;
 
 static void report(void *ctx, IOReturn r, void *sender, IOHIDReportType type,
                    uint32_t rid, uint8_t *data, CFIndex len) {
     (void)ctx; (void)r; (void)sender; (void)type;
-    printf("HIDREP: id=%u len=%ld ", (unsigned)rid, (long)len);
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double t = (now.tv_sec - t0.tv_sec) + (now.tv_nsec - t0.tv_nsec) / 1e9;
+    printf("HIDREP: t=%6.1f id=%u len=%ld ", t, (unsigned)rid, (long)len);
     for (CFIndex i = 0; i < len && i < 17; i++) printf("%02x", data[i]);
     printf("\n");
     fflush(stdout);
@@ -28,13 +34,14 @@ static void added(void *ctx, IOReturn r, void *sender, IOHIDDeviceRef d) {
 
 int main(void) {
     setbuf(stdout, NULL);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     IOHIDManagerRef m = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
     IOHIDManagerSetDeviceMatching(m, NULL);
     IOHIDManagerRegisterDeviceMatchingCallback(m, added, NULL);
     IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
     IOHIDManagerOpen(m, kIOHIDOptionsTypeNone);
-    printf("HIDREP: move sticks + press bumpers for 18s\n");
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 18, FALSE);
+    printf("HIDREP: press buttons in order A B X Y LB RB Back Start, ~4s each\n");
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 150, FALSE);
     printf("HIDREP: done\n");
     return 0;
 }
