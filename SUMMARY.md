@@ -169,6 +169,40 @@ checkpoint rebuild script should be preferred for future recovery.
   `wineserver -k` cannot kill orphans of an already-dead server.
 - `tools/run-tls-probe-wineforge.zsh`: isolated HTTPS verification.
 - `tools/run-tls-probe-native-gptk.zsh`: comparison test for GPTK native Wine.
+- `scripts/install-webhelper-shim.zsh` (+ `tools/steamwebhelper-shim.c`, added
+  2026-11-13): reinstalls the steamwebhelper flag shim, see below.
+
+## Steam black window (CEF present path) — webhelper shim (2026-11-13)
+
+Symptom: Steam window (login and main) paints pure black but stays interactive
+(pages load, login is clickable). Seen on the Beta channel (Sep 2026), then
+again when stable updated to client build `1794424036` (Nov 12, 2026).
+
+Cause: Steam's UI is Chromium (CEF) in `steamwebhelper.exe`. Chromium draws in
+one process and presents in another; that cross-process present is lost under
+Wine on macOS, so frames never reach the window. `steam.exe` filters most
+`-cef-*` flags instead of forwarding them (verified in `logs/webhelper.txt`:
+`-cef-in-process-gpu`, `-cef-use-gl`, `-cef-use-angle` never reach the
+renderer; only `-cef-disable-gpu*` forwards, which alone does not fix it), so
+`STEAM_EXTRA_ARGS` cannot fix this class of black window. The Aug-2026 setup
+worked because the helper ran with `--disable-gpu --single-process` first on
+its own command line (single-process = no cross-process present to break);
+the Nov-12 update replaced that shim with a stock binary.
+
+Fix: the shim (`tools/steamwebhelper-shim.c`, built with mingw) is installed
+AS `bin/cef/cef.win64/steamwebhelper.exe`; Valve's binary is kept beside it as
+`steamwebhelper_real.exe`. It prepends `--disable-gpu --single-process` to
+every helper invocation (browser and `--type=*` children) and waits on the
+child so steam.exe's process tracking works. The shim is size-matched to the
+genuine binary. `start steam` needs no extra flags.
+
+Maintenance: every Steam client self-update replaces the shim (symptom: black
+window returns). Re-run `zsh scripts/install-webhelper-shim.zsh` (Steam must
+be stopped), then start normally. A copy of the replaced Valve binary is kept
+as `steamwebhelper.stock-<timestamp>.exe` in the same directory. Rule out the
+Beta channel first (`bootstrap_log.txt` should show `steam_client_win64`, not
+`publicbeta`) and stale cache (`.../AppData/Local/Steam/htmlcache`) before
+assuming the shim is at fault.
 
 ## Elden Ring (AppID `1245620`, added 2026-09-20, booting as of 2026-09-20)
 
