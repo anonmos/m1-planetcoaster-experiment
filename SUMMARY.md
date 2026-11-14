@@ -208,13 +208,15 @@ Rule out the Beta channel first (`bootstrap_log.txt` should show
 `steam_client_win64`, not `publicbeta`) and stale cache
 (`.../AppData/Local/Steam/htmlcache`) before assuming the shim is at fault.
 
-Hard prevention (opt-in): restoring `Steam/steam.cfg` containing
-`BootStrapperInhibitAll=enable` (a backup from Sep 2026 with exactly this
-content exists as `steam.cfg.backup-before-beta-20260929`) stops the
-bootstrapper from self-updating at all. Tradeoff: the client pins at its
-current build — fine for offline/single-player, but online features and new
-games may eventually require a newer client. To resume updates, delete the
-file and re-run the shim installer after the next launch.
+Hard prevention (ACTIVE since 2026-11-14): `Steam/steam.cfg` contains
+`BootStrapperInhibitAll=enable` (restored from
+`steam.cfg.backup-before-beta-20260929`), so the bootstrapper no longer
+self-updates — the shim cannot be replaced out from under us. Tradeoff: the
+client is pinned at its current build, fine for offline/single-player, but
+online features and new games may eventually require a newer client. To
+resume updates: stop Steam, delete `steam.cfg`, launch once (updater runs;
+that session may come up black), then `stop all` + `start steam` — the
+controller re-applies the shim automatically.
 
 ## Elden Ring (AppID `1245620`, added 2026-09-20, booting as of 2026-09-20)
 
