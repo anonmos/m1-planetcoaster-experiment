@@ -51,12 +51,11 @@ else
   cp -p "$HELPER" "$CEF/steamwebhelper.stock-$TS.exe"
   mv -f "$HELPER" "$REAL"
   print "Saved current Valve binary (and replaced any stale _real)."
+  cp -f "$SHIM_BIN" "$HELPER"
+  # Size-match the genuine binary: Steam's bootstrap has been observed to
+  # restore a replaced helper (exit 42); keep the shim byte-identical in size.
+  SZ="$(stat -f%z "$REAL")"
+  truncate -s "$SZ" "$HELPER"
+  print "Installed shim ($SZ bytes, size-matched to genuine binary)."
 fi
-
-# Size-match the genuine binary: Steam's bootstrap has been observed to
-# restore a replaced helper (exit 42); keep the shim byte-identical in size.
-SZ="$(stat -f%z "$REAL")"
-cp -f "$SHIM_BIN" "$HELPER"
-truncate -s "$SZ" "$HELPER"
-print "Installed shim ($SZ bytes, size-matched to genuine binary)."
 print 'Next (local Terminal): zsh scripts/control-steam.zsh start steam'
