@@ -36,7 +36,9 @@ fi
 
 print 'Building shim...'
 mkdir -p "$ROOT/build"
-x86_64-w64-mingw32-gcc -mwindows -O2 -o "$SHIM_BIN" "$SHIM_SRC"
+# --no-insert-timestamp keeps the build deterministic (the PE timestamp would
+# otherwise differ every build and defeat the already-installed check below).
+x86_64-w64-mingw32-gcc -mwindows -O2 -Wl,--no-insert-timestamp -o "$SHIM_BIN" "$SHIM_SRC"
 
 # Preserve Valve's binary. The installed shim is zero-padded to the genuine
 # size, so compare the installed first-N bytes against the fresh build
