@@ -308,13 +308,18 @@ release_awake() {
 }
 
 ensure_webhelper_shim() {
-  # Steam self-updates replace the CEF shim (black window returns). Re-apply
-  # it here, before launch, so update days self-heal on the next start.
-  # Never blocks startup: any failure just warns and continues stock.
+  # Steam self-updates replace the CEF shim (black window returns). Called on
+  # `start steam` (covers drift while Steam was down) and on `stop steam` /
+  # `stop all` (covers updates applied by the session just ended: nothing is
+  # pending anymore, so the reinstall sticks and the next start just works).
+  # It cannot save the launch that applies the update itself — the updater
+  # replaces the helper mid-launch, after this check runs. That session stays
+  # black; the normal stop/start cycle recovers it with no extra commands.
+  # Never blocks startup/shutdown: any failure just warns and continues.
   local installer="$ROOT/scripts/install-webhelper-shim.zsh"
   if [[ -f "$installer" && -f "$ROOT/tools/steamwebhelper-shim.c" ]] && command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
     WINEPREFIX="$P" zsh "$installer" >>"$STEAM_LOG" 2>&1 || \
-      print -u2 'Warning: webhelper shim reinstall failed; starting stock (black window possible).'
+      print -u2 'Warning: webhelper shim reinstall failed (black window possible).'
   fi
 }
 
@@ -398,10 +403,10 @@ start_game() {
 case "$1 $2" in
   'start steam') start_steam ;;
   'start game') start_game ;;
-  'stop steam') stop_scope steam; release_awake ;;
+  'stop steam') stop_scope steam; ensure_webhelper_shim; release_awake ;;
   'stop game') stop_scope game; sleep 2; release_awake_if_idle ;;
   'start all') start_steam && wait_for_steam && start_game ;;
-  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; stop_capture_helper; release_awake; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
+  'stop all') stop_scope game; stop_scope steam; stop_scope all; stop_prefix_server; ensure_webhelper_shim; stop_capture_helper; release_awake; rm -f "$GAME_PIDFILE" "$STEAM_PIDFILE" ;;
   'start display') hold_awake ;;
   'stop display') release_awake; print 'Display sleep hold released.' ;;
 esac

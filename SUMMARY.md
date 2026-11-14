@@ -197,14 +197,16 @@ child so steam.exe's process tracking works. The shim is size-matched to the
 genuine binary. `start steam` needs no extra flags.
 
 Maintenance: every Steam client self-update replaces the shim (symptom: black
-window returns). `start steam` now re-applies it automatically before launch
-(`ensure_webhelper_shim` in the controller; no-op when already installed), so
-update days self-heal on the next start — worst case, `stop all` + `start
-steam` once. A copy of the replaced Valve binary is kept as
-`steamwebhelper.stock-<timestamp>.exe` in the same directory. Rule out the
-Beta channel first (`bootstrap_log.txt` should show `steam_client_win64`, not
-`publicbeta`) and stale cache (`.../AppData/Local/Steam/htmlcache`) before
-assuming the shim is at fault.
+window returns). The controller re-applies it automatically on `start steam`
+(covers drift while Steam was down) and on `stop steam` / `stop all` (covers
+updates applied by the session just ended). Ordering caveat: the updater
+replaces the helper mid-launch, after any pre-launch check runs, so the
+launch that applies an update still comes up black — the normal stop/start
+cycle recovers it with no extra commands. A copy of the replaced Valve binary
+is kept as `steamwebhelper.stock-<timestamp>.exe` in the same directory.
+Rule out the Beta channel first (`bootstrap_log.txt` should show
+`steam_client_win64`, not `publicbeta`) and stale cache
+(`.../AppData/Local/Steam/htmlcache`) before assuming the shim is at fault.
 
 Hard prevention (opt-in): restoring `Steam/steam.cfg` containing
 `BootStrapperInhibitAll=enable` (a backup from Sep 2026 with exactly this
