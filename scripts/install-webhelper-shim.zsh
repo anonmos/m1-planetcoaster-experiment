@@ -25,7 +25,10 @@ if [[ ! -f "$HELPER" ]]; then
 fi
 
 # Never touch a running Steam: file swaps under a live client corrupt it.
-if ps -axo args= 2>/dev/null | grep -qiE 'steam\.exe|steamwebhelper' ; then
+# NOTE: use pgrep with a bracket pattern — a naive `ps | grep steamwebhelper`
+# matches the grep process itself (its argv contains the pattern text) and
+# refuses even with nothing running (seen 2026-11-14 after a reboot).
+if pgrep -qf '[s]team\.exe|[s]teamwebhelper'; then
   print -u2 'Steam processes are running. Run this first:'
   print -u2 '  zsh scripts/control-steam.zsh stop all'
   exit 1
@@ -35,8 +38,11 @@ print 'Building shim...'
 mkdir -p "$ROOT/build"
 x86_64-w64-mingw32-gcc -mwindows -O2 -o "$SHIM_BIN" "$SHIM_SRC"
 
-# Preserve Valve's binary (if HELPER is already our shim, REAL is genuine).
-if cmp -s "$HELPER" "$SHIM_BIN" 2>/dev/null; then
+# Preserve Valve's binary. The installed shim is zero-padded to the genuine
+# size, so compare the installed first-N bytes against the fresh build
+# (plain `cmp` of padded vs unpadded always "differs" at the padding).
+SHIM_SZ="$(stat -f%z "$SHIM_BIN")"
+if head -c "$SHIM_SZ" "$HELPER" 2>/dev/null | cmp -s - "$SHIM_BIN"; then
   print 'Shim already installed; genuine binary untouched.'
 else
   TS="$(date +%Y%m%d-%H%M%S)"
