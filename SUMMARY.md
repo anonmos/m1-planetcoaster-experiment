@@ -197,12 +197,22 @@ child so steam.exe's process tracking works. The shim is size-matched to the
 genuine binary. `start steam` needs no extra flags.
 
 Maintenance: every Steam client self-update replaces the shim (symptom: black
-window returns). Re-run `zsh scripts/install-webhelper-shim.zsh` (Steam must
-be stopped), then start normally. A copy of the replaced Valve binary is kept
-as `steamwebhelper.stock-<timestamp>.exe` in the same directory. Rule out the
+window returns). `start steam` now re-applies it automatically before launch
+(`ensure_webhelper_shim` in the controller; no-op when already installed), so
+update days self-heal on the next start — worst case, `stop all` + `start
+steam` once. A copy of the replaced Valve binary is kept as
+`steamwebhelper.stock-<timestamp>.exe` in the same directory. Rule out the
 Beta channel first (`bootstrap_log.txt` should show `steam_client_win64`, not
 `publicbeta`) and stale cache (`.../AppData/Local/Steam/htmlcache`) before
 assuming the shim is at fault.
+
+Hard prevention (opt-in): restoring `Steam/steam.cfg` containing
+`BootStrapperInhibitAll=enable` (a backup from Sep 2026 with exactly this
+content exists as `steam.cfg.backup-before-beta-20260929`) stops the
+bootstrapper from self-updating at all. Tradeoff: the client pins at its
+current build — fine for offline/single-player, but online features and new
+games may eventually require a newer client. To resume updates, delete the
+file and re-run the shim installer after the next launch.
 
 ## Elden Ring (AppID `1245620`, added 2026-09-20, booting as of 2026-09-20)
 

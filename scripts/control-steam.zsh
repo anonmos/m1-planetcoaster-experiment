@@ -307,15 +307,27 @@ release_awake() {
   pkill -f 'caffeinate -dims' 2>/dev/null || true
 }
 
+ensure_webhelper_shim() {
+  # Steam self-updates replace the CEF shim (black window returns). Re-apply
+  # it here, before launch, so update days self-heal on the next start.
+  # Never blocks startup: any failure just warns and continues stock.
+  local installer="$ROOT/scripts/install-webhelper-shim.zsh"
+  if [[ -f "$installer" && -f "$ROOT/tools/steamwebhelper-shim.c" ]] && command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
+    WINEPREFIX="$P" zsh "$installer" >>"$STEAM_LOG" 2>&1 || \
+      print -u2 'Warning: webhelper shim reinstall failed; starting stock (black window possible).'
+  fi
+}
+
 start_steam() {
   require_gui_session 'start Steam' || return 1
   if (( ${#$(find_pids steam)} )); then
     print 'Steam is already running for this bottle.'
     return 0
   fi
+  : > "$STEAM_LOG"
+  ensure_webhelper_shim
   hold_awake
   start_capture_helper || true
-  : > "$STEAM_LOG"
   cd "$STEAM_DIR"
   print 'Starting Steam...'
   # STEAM_EXTRA_ARGS: one-shot flags, e.g. STEAM_EXTRA_ARGS="-clearbeta"
